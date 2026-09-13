@@ -1001,6 +1001,35 @@ impl App {
     }
 
     pub(crate) fn root_flash_step(&self) -> Element<'_, Message> {
-        self.exec_step_view()
+        let execution = self.exec_step_view();
+        let Some(key) = self.root.skroot_root_key.as_deref() else {
+            return execution;
+        };
+        let key_text = key.to_string();
+        let result = container(
+            column![
+                text(self.t("root_skroot_key_label"))
+                    .size(theme::text_size::BODY_SMALL)
+                    .style(muted_style),
+                row![
+                    text(key_text.clone())
+                        .size(theme::text_size::BODY_MEDIUM)
+                        .font(theme::emphasis::medium())
+                        .width(Length::Fill),
+                    m3_outlined_button(self.t("root_skroot_key_copy").to_string())
+                        .on_press(Message::Root(RootMsg::CopySkrootKey)),
+                ]
+                .spacing(12)
+                .align_y(iced::Alignment::Center),
+            ]
+            .spacing(8)
+            .width(Length::Fill),
+        )
+        .padding([14.0, 18.0])
+        .width(Length::Fill)
+        .style(|t: &Theme| {
+            theme::surface_card_style(t, theme::SurfaceLevel::Default, theme::shape::MD)
+        });
+        column![execution, result].spacing(12).into()
     }
 }

@@ -248,7 +248,12 @@ mod tests {
         // This task reschedules the exit check; completion messages still run.
         drop(app.update(Message::ExitAfterUpdate));
         assert!(app.operation.is_running());
-        drop(app.update(Message::Root(RootMsg::RootExecDone(Vec::new()))));
+        drop(app.update(Message::Root(RootMsg::RootExecDone(
+            crate::workers::root::RootWorkerResult {
+                log: Vec::new(),
+                skroot_root_key: None,
+            },
+        ))));
         assert!(!app.operation.is_running());
         assert!(app.can_exit_after_self_update());
         app.installing_drivers = true;

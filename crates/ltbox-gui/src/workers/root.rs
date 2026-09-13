@@ -10,6 +10,40 @@ use crate::{
 };
 use ltbox_core::{i18n::tr, live, tr_args};
 
+/// Completion data kept off the operation log. Do not derive `Debug`: this can
+/// carry the SKRoot key shown only in the dedicated result area.
+#[derive(Clone)]
+pub(crate) struct RootWorkerResult {
+    pub(crate) log: Vec<String>,
+    pub(crate) skroot_root_key: Option<String>,
+}
+
+impl std::fmt::Debug for RootWorkerResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RootWorkerResult")
+            .field("log", &self.log)
+            .field(
+                "skroot_root_key",
+                &self.skroot_root_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+fn save_skroot_key(path: &std::path::Path, key: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(key.as_bytes())?;
+    file.sync_all()
+}
+
 fn fingerprint_matches_detected_model(fingerprint: &str, device_model: &str) -> bool {
     fingerprint_token_match(fingerprint, device_model)
 }
@@ -67,7 +101,7 @@ pub(crate) fn root_worker(
     preinit_device: String,
     ll: LiveLabels,
     phases: PhaseReporter,
-) -> Result<Vec<String>, String> {
+) -> Result<RootWorkerResult, String> {
     let mut log = Vec::new();
     if !ltbox_core::model::capabilities(&device_model).root {
         return Err(tr_args!("model_unsupported", model = "TB376FC / TB390FU"));
@@ -273,6 +307,7 @@ pub(crate) fn root_worker(
     // `keep_staging` forces the work dir to survive cleanup only in the
     // latter case, where the local file is the user's last resort.
     let mut manager_install_failed_path: Option<std::path::PathBuf> = None;
+    let mut skroot_root_key = None;
     let mut keep_staging = false;
     let manager_installed_pre_edl = if adb_ready_at_start {
         if let Some(path) = manager_apk.as_ref() {
@@ -549,6 +584,13 @@ pub(crate) fn root_worker(
             let cfg = manager_cfg.clone();
             let artifacts = build_patched_artifacts(&cfg, uses_gbl, &mut log)
                 .map_err(|e| tr_args!("err_root_patch_failed", error = e))?;
+            skroot_root_key = artifacts.skroot_root_key.clone();
+            if let Some(key) = skroot_root_key.as_deref() {
+                // Persist before any write, including partial-flash failures.
+                // The backup survives successful staging cleanup and app exit.
+                save_skroot_key(&backup_dir.join("skroot-root-key.txt"), key)
+                    .map_err(|e| tr_args!("err_root_patch_failed", error = e))?;
+            }
             if manager_apk.is_none() {
                 manager_apk = artifacts.manager_apk.clone();
             }
@@ -667,7 +709,10 @@ pub(crate) fn root_worker(
             if !keep_staging {
                 let _ = std::fs::remove_dir_all(&base);
             }
-            Ok(log)
+            Ok(RootWorkerResult {
+                log,
+                skroot_root_key,
+            })
         }
         Err(e) => {
             if !should_reset_after_root_device_error(writes_started) {
@@ -714,6 +759,22 @@ fn should_reset_after_root_device_error(writes_started: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skroot_result_debug_redacts_key_and_backup_preserves_it() {
+        let key = "test-secret-key";
+        let result = RootWorkerResult {
+            log: vec![],
+            skroot_root_key: Some(key.into()),
+        };
+        assert!(!format!("{result:?}").contains(key));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("skroot-root-key.txt");
+        save_skroot_key(&path, key).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), key);
+        assert!(save_skroot_key(&path, "replacement").is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), key);
+    }
 
     #[test]
     fn unsupported_model_workers_reject_before_inputs_or_device_access() {

@@ -451,6 +451,8 @@ pub struct PatchedArtifacts {
     /// Target partition name (`init_boot_a`, `boot_a`, …).
     pub root_partition: String,
     pub vbmeta_partition: Option<String>,
+    /// SKRoot's generated key. It intentionally never enters the operation log.
+    pub skroot_root_key: Option<String>,
 }
 
 /// Build patched artifacts: fetch payload, patch, resign, rebuild vbmeta,
@@ -506,7 +508,7 @@ pub fn build_patched_artifacts(
         stage_root_payload(cfg, log)?;
     }
 
-    let patched_root_image = if cfg.gki_mode {
+    let (patched_root_image, skroot_root_key) = if cfg.gki_mode {
         // GKI: swap kernel blob from user's AnyKernel3 zip — no GitHub fetch.
         let kernel_zip = cfg.gki_kernel_zip.as_ref().ok_or_else(|| {
             LtboxError::Patch("GKI mode requires a custom kernel zip — none supplied".into())
@@ -516,7 +518,7 @@ pub fn build_patched_artifacts(
             "[GKI] {}",
             tr_args!("log_gki_kernel_zip", path = kernel_zip.display())
         );
-        gki::patch_boot(&cfg.work_dir, kernel_zip, log)?
+        (gki::patch_boot(&cfg.work_dir, kernel_zip, log)?, None)
     } else {
         match cfg.family {
             RootFamily::Magisk => {
@@ -525,12 +527,15 @@ pub fn build_patched_artifacts(
                     "[Magisk] {}",
                     tr_args!("log_magisk_patching_image", image = stock_filename)
                 );
-                crate::magisk::patch_root_image(
-                    &cfg.work_dir,
-                    cfg.root_image_target,
-                    &cfg.preinit_device,
-                    log,
-                )?
+                (
+                    crate::magisk::patch_root_image(
+                        &cfg.work_dir,
+                        cfg.root_image_target,
+                        &cfg.preinit_device,
+                        log,
+                    )?,
+                    None,
+                )
             }
             RootFamily::KernelSU => {
                 ltbox_core::live!(
@@ -538,7 +543,10 @@ pub fn build_patched_artifacts(
                     "[KSU] {}",
                     tr_args!("log_ksu_patching_image", image = stock_filename)
                 );
-                crate::ksu::patch_root_image(&cfg.work_dir, cfg.root_image_target, log)?
+                (
+                    crate::ksu::patch_root_image(&cfg.work_dir, cfg.root_image_target, log)?,
+                    None,
+                )
             }
             RootFamily::APatch => {
                 ltbox_core::live!(
@@ -550,9 +558,15 @@ pub fn build_patched_artifacts(
                         superkey_len = cfg.superkey.len(),
                     )
                 );
-                crate::apatch::patch_boot(&cfg.work_dir, &cfg.kpm_paths, &cfg.superkey, log)?
+                (
+                    crate::apatch::patch_boot(&cfg.work_dir, &cfg.kpm_paths, &cfg.superkey, log)?,
+                    None,
+                )
             }
-            RootFamily::Skroot => skroot::patch_boot(&cfg.work_dir, log)?,
+            RootFamily::Skroot => {
+                let patched = skroot::patch_boot(&cfg.work_dir, log)?;
+                (patched.image, Some(patched.root_key))
+            }
         }
     };
 
@@ -718,6 +732,7 @@ pub fn build_patched_artifacts(
         manager_apk: staged_manager_apk.exists().then_some(staged_manager_apk),
         root_partition: format!("{}{suffix}", cfg.root_image_target.partition_base()),
         vbmeta_partition,
+        skroot_root_key,
     })
 }
 

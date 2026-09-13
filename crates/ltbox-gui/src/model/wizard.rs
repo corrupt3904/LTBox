@@ -58,6 +58,8 @@ pub(crate) struct RootWizard {
     pub(crate) kernel_version: Option<String>,
     pub(crate) kernel_version_popup_open: bool,
     pub(crate) kernel_version_buffer: String,
+    /// SKRoot key shown only after a successful run; never added to logs.
+    pub(crate) skroot_root_key: Option<String>,
 }
 
 pub(crate) const ROOT_STEPS: &[&str] = &[

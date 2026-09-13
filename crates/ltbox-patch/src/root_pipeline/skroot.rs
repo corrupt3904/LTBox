@@ -19,7 +19,12 @@ const ROOT_KEY_LEN: usize = 48;
 const ROOT_KEY_STORED_TEXT_LEN: usize = ROOT_KEY_LEN - 1;
 const ROOT_KEY_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-pub fn patch_boot(work_dir: &Path, log: &mut Vec<String>) -> Result<PathBuf> {
+pub struct SkrootPatchedBoot {
+    pub image: PathBuf,
+    pub root_key: String,
+}
+
+pub fn patch_boot(work_dir: &Path, log: &mut Vec<String>) -> Result<SkrootPatchedBoot> {
     let boot_in = work_dir.join("boot.img");
     let kernel_path = work_dir.join("kernel");
 
@@ -50,12 +55,6 @@ pub fn patch_boot(work_dir: &Path, log: &mut Vec<String>) -> Result<PathBuf> {
     let root_key = generate_root_key()?;
     write_root_key(&mut kernel, plan.root_key_addr, &root_key)?;
     fs::write(&kernel_path, &kernel)?;
-    ltbox_core::live!(
-        log,
-        "[SKRoot] {}",
-        tr_args!("log_skroot_root_key", key = root_key)
-    );
-
     ltbox_core::live!(log, "[SKRoot] {}", tr("log_skroot_repack_boot"));
     boot::repack("boot.img", work_dir)?;
     let new_boot = work_dir.join("new-boot.img");
@@ -65,7 +64,10 @@ pub fn patch_boot(work_dir: &Path, log: &mut Vec<String>) -> Result<PathBuf> {
         ));
     }
     ltbox_core::live!(log, "[SKRoot] {}", tr("log_patch_complete"));
-    Ok(new_boot)
+    Ok(SkrootPatchedBoot {
+        image: new_boot,
+        root_key,
+    })
 }
 
 fn apply_kernel_writes(kernel: &mut [u8], plan: &SkrootCorePatchPlan) -> Result<()> {
@@ -169,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_and_logged_root_key_matches_image_c_string() {
+    fn generated_root_key_matches_image_c_string_without_logging() {
         let key = generate_root_key().expect("key");
         let mut kernel = vec![0xff; 96];
 

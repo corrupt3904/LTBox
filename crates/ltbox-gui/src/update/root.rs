@@ -505,6 +505,7 @@ impl App {
                 }
                 let phases = self.begin_phased_op(View::Root, OperationPhaseKind::Root);
                 self.error_msg = None;
+                self.root.skroot_root_key = None;
                 let family = self.root.family;
                 let mode = self.root.mode;
                 let provider = self.root.provider;
@@ -624,13 +625,20 @@ impl App {
                         .unwrap_or_else(|_| Err(ltbox_core::i18n::tr("err_task_failed")))
                     },
                     |result| match result {
-                        Ok(lines) => Message::Root(RootMsg::RootExecDone(lines)),
+                        Ok(result) => Message::Root(RootMsg::RootExecDone(result)),
                         Err(e) => Message::OperationError(e),
                     },
                 )
             }
-            RootMsg::RootExecDone(lines) => {
-                self.flush_exec_done_log(lines);
+            RootMsg::CopySkrootKey => self
+                .root
+                .skroot_root_key
+                .clone()
+                .map(iced::clipboard::write)
+                .unwrap_or_else(Task::none),
+            RootMsg::RootExecDone(result) => {
+                self.root.skroot_root_key = result.skroot_root_key;
+                self.flush_exec_done_log(result.log);
                 self.end_op();
                 Task::none()
             }

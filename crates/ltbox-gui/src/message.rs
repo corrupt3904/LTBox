@@ -318,7 +318,8 @@ pub(crate) enum RootMsg {
     /// popup.
     RootKernelVersionProbeDone(Option<String>),
     RootExecStart,
-    RootExecDone(Vec<String>),
+    RootExecDone(crate::workers::root::RootWorkerResult),
+    CopySkrootKey,
 }
 
 #[derive(Debug, Clone)]
