@@ -40,6 +40,15 @@ impl App {
         if change.reset_identity || change.context_changed {
             self.invalidate_device_views();
         }
+        // A running worker owns its captured inputs. Completed scans must not
+        // survive a disconnect or a newly identified device.
+        if !self.operation.is_running()
+            && (change.reset_identity
+                || (change.context_changed && self.device.connection != ConnectionStatus::Edl))
+        {
+            self.flash_parts.reset();
+            self.dump_parts.reset();
+        }
         if change.left_fastboot
             || (self.device.connection != ConnectionStatus::Fastboot
                 && !self

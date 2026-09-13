@@ -250,3 +250,14 @@ fn blank_serial_fastboot_poll_does_not_prove_a_device_swap() {
     assert_eq!(app.device.rollback_floors, Some(rollback_floors()));
     assert!(app.rollback_popup_open);
 }
+
+#[test]
+fn disconnect_invalidates_partition_selection() {
+    let mut app = App::default();
+    app.device.connection = ConnectionStatus::Edl;
+    app.flash_parts.step = 2;
+    app.dump_parts.step = 1;
+    app.apply_device_snapshot(DevicePollResult::default());
+    assert_eq!(app.flash_parts.step, 0);
+    assert_eq!(app.dump_parts.step, 0);
+}

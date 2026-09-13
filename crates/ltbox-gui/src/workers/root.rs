@@ -6,8 +6,7 @@ use crate::backup::{create_backup_dir, write_backup_manifest};
 use crate::{
     ConnectionStatus, Family, LiveLabels, PhaseReporter, Provider, RootMode, VerChoice,
     fingerprint_token_match, install_root_manager_apk, open_edl_session, prepare_canoe_efisp,
-    provision_canoe_efisp, stage_manager_apk_for_manual_install, transition_to_edl,
-    wait_and_install_root_manager_apk,
+    stage_manager_apk_for_manual_install, transition_to_edl, wait_and_install_root_manager_apk,
 };
 use ltbox_core::{i18n::tr, live, tr_args};
 
@@ -556,51 +555,48 @@ pub(crate) fn root_worker(
             // Phase 6/8 — Write patched images.
             live!(log, "[Root] {}", phases.marker(6));
             let mut session = open_edl_session(&loader, &mut log)?;
-            // Mirror of the equivalent one-shot `qdl-rs
-            // --phys-part-idx 4 write <name> <img>` — GPT
-            // resolves the start sector, so no rawprogram
-            // sector attrs to thread through.
-            // Provision efisp with the region GBL fetched above (only set
-            // when the dumped efisp was empty) BEFORE flashing the patched
-            // root target image. Ordering still matters for brick-safety: if
-            // the GBL flash fails, the root target image is still stock. After
-            // any write
-            // begins, the error path leaves the device in EDL rather than
-            // rebooting a partial chain.
+            // Keep efisp first for GBL provisioning, but validate and retain
+            // every image before any member of the boot chain is written.
+            let mut requests = Vec::new();
             if let Some(efi) = &root_efisp_efi {
-                phases.mark_writes_started();
-                writes_started = true;
-                provision_canoe_efisp(&mut session, Some(efi), &mut log)?;
+                requests.push(ltbox_device::edl::PartitionFlash {
+                    label: "efisp",
+                    image: efi,
+                    slot: 0,
+                    lun: ltbox_core::partition_lun::lun_for_partition("efisp").unwrap_or(4),
+                });
             }
-            phases.mark_writes_started();
-            writes_started = true;
+            requests.push(ltbox_device::edl::PartitionFlash {
+                label: &artifacts.root_partition,
+                image: &artifacts.patched_root_image,
+                slot: 0,
+                lun: ROOT_PARTITIONS_LUN,
+            });
+            if let Some(vbpath) = &artifacts.patched_vbmeta {
+                requests.push(ltbox_device::edl::PartitionFlash {
+                    label: &vbmeta_primary,
+                    image: vbpath,
+                    slot: 0,
+                    lun: ROOT_PARTITIONS_LUN,
+                });
+            }
             session
-                .flash_partition(
-                    &artifacts.root_partition,
-                    &artifacts.patched_root_image,
-                    0,
-                    ROOT_PARTITIONS_LUN,
+                .flash_partition_batch(
+                    &requests,
                     &mut log,
+                    |_, _, _| {},
+                    || {
+                        phases.mark_writes_started();
+                        writes_started = true;
+                    },
                 )
                 .map_err(|e| {
                     tr_args!(
                         "err_root_flash_partition_failed",
-                        partition = artifacts.root_partition,
-                        error = e
+                        partition = e.partition,
+                        error = e.source
                     )
                 })?;
-            if let Some(vbpath) = &artifacts.patched_vbmeta {
-                phases.mark_writes_started();
-                session
-                    .flash_partition(&vbmeta_primary, vbpath, 0, ROOT_PARTITIONS_LUN, &mut log)
-                    .map_err(|e| {
-                        tr_args!(
-                            "err_root_flash_partition_failed",
-                            partition = vbmeta_primary,
-                            error = e
-                        )
-                    })?;
-            }
             // Surface the backup folder before the reset
             // so the user doesn't have to scroll.
             live!(

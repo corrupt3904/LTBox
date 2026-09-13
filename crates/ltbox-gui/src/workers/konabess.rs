@@ -361,11 +361,10 @@ trait KonaBessFlashBackend {
         fresh: bool,
         log: &mut Vec<String>,
     ) -> Result<(), String>;
-    fn flash_partition(
+    fn flash_batch(
         &mut self,
-        partition: &str,
-        image: &Path,
-        lun: u8,
+        requests: &[ltbox_device::edl::PartitionFlash<'_>],
+        phases: &PhaseReporter,
         log: &mut Vec<String>,
     ) -> Result<(), String>;
     fn reboot(&mut self, log: &mut Vec<String>);
@@ -433,23 +432,31 @@ impl KonaBessFlashBackend for FlashDeviceBackend<'_> {
         Ok(())
     }
 
-    fn flash_partition(
+    fn flash_batch(
         &mut self,
-        partition: &str,
-        image: &Path,
-        lun: u8,
+        requests: &[ltbox_device::edl::PartitionFlash<'_>],
+        phases: &PhaseReporter,
         log: &mut Vec<String>,
     ) -> Result<(), String> {
-        // Set this before entering Firehose's write path. A transport drop or
-        // ambiguous write error must be treated as a partial flash.
-        self.writes_started = true;
-        self.session()?
-            .flash_partition(partition, image, 0, lun, log)
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| ltbox_core::i18n::tr("err_task_failed"))?;
+        session
+            .flash_partition_batch(
+                requests,
+                log,
+                |_, _, _| {},
+                || {
+                    self.writes_started = true;
+                    phases.mark_writes_started();
+                },
+            )
             .map_err(|error| {
                 tr_args!(
                     "err_root_flash_partition_failed",
-                    partition = partition,
-                    error = error
+                    partition = error.partition,
+                    error = error.source
                 )
             })
     }
@@ -528,19 +535,22 @@ fn execute_flash<B: KonaBessFlashBackend>(
     if edit.gbl_verified {
         backend.verify_abl(prepared, true, log)?;
     }
-    phases.mark_writes_started();
-    backend.flash_partition(
-        &vendor_boot_partition,
-        &output.vendor_boot,
-        vendor_boot_lun,
-        log,
-    )?;
-    // Absent on a GBL-verified device: the AVB chain was never rebuilt, so
-    // there is nothing to pair with the vendor_boot write.
+    let mut requests = vec![ltbox_device::edl::PartitionFlash {
+        label: &vendor_boot_partition,
+        image: &output.vendor_boot,
+        slot: 0,
+        lun: vendor_boot_lun,
+    }];
+    // The GBL route does not rebuild vbmeta.
     if let Some(vbmeta) = output.vbmeta.as_deref() {
-        phases.mark_writes_started();
-        backend.flash_partition(&vbmeta_partition, vbmeta, vbmeta_lun, log)?;
+        requests.push(ltbox_device::edl::PartitionFlash {
+            label: &vbmeta_partition,
+            image: vbmeta,
+            slot: 0,
+            lun: vbmeta_lun,
+        });
     }
+    backend.flash_batch(&requests, phases, log)?;
 
     // The reset is deliberately unreachable until both members of the
     // AVB-matched pair have completed in this same backend session.
@@ -784,21 +794,23 @@ mod tests {
             Ok(())
         }
 
-        fn flash_partition(
+        fn flash_batch(
             &mut self,
-            partition: &str,
-            _image: &Path,
-            lun: u8,
+            requests: &[ltbox_device::edl::PartitionFlash<'_>],
+            phases: &PhaseReporter,
             _log: &mut Vec<String>,
         ) -> Result<(), String> {
             assert!(self.session_open);
-            self.writes_started = true;
-            self.events.push(format!("flash:{partition}:{lun}"));
-            if self.fail_second_write && partition.starts_with("vbmeta") {
-                Err("second write failed".into())
-            } else {
-                Ok(())
+            for request in requests {
+                self.writes_started = true;
+                phases.mark_writes_started();
+                self.events
+                    .push(format!("flash:{}:{}", request.label, request.lun));
+                if self.fail_second_write && request.label.starts_with("vbmeta") {
+                    return Err("second write failed".into());
+                }
             }
+            Ok(())
         }
 
         fn reboot(&mut self, _log: &mut Vec<String>) {

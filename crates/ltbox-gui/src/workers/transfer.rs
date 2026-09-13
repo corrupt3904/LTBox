@@ -239,115 +239,114 @@ pub(crate) fn flash_parts_execute(
         }
     };
 
+    let expected: Vec<_> = rows
+        .iter()
+        .map(|row| ltbox_device::edl::GptPartitionInfo {
+            lun: row.lun,
+            name: row.label.clone(),
+            start_sector: row.start_sector,
+            num_sectors: row.num_sectors,
+            size_bytes: row.size_bytes,
+        })
+        .collect();
+    session
+        .validate_partition_snapshot(&expected)
+        .map_err(|error| error.to_string())?;
+
     ltbox_core::live!(log, "[FlashParts] {}", phases.marker(2));
-    for row in &rows {
-        match row.state {
-            FlashRowState::Write => {
-                // Sources were preflighted; treat absence as a hard error if
-                // state races somehow remove the path between checks.
-                let Some(path) = row.file_path.as_ref() else {
-                    return Err(format!("{}: no file selected", row.label));
-                };
-                let img = std::path::Path::new(path);
-                if !img.is_file() {
-                    return Err(format!(
-                        "{}: {}",
-                        row.label,
-                        tr_args!("err_path_missing", path = path)
-                    ));
+    let requests = rows
+        .iter()
+        .filter(|row| row.state != FlashRowState::Skip)
+        .map(|row| {
+            let image = if row.state == FlashRowState::Write {
+                Some(std::path::Path::new(
+                    row.file_path
+                        .as_deref()
+                        .ok_or_else(|| format!("{}: no file selected", row.label))?,
+                ))
+            } else {
+                None
+            };
+            Ok(ltbox_device::edl::PartitionOperation {
+                label: &row.label,
+                image,
+                slot: 0,
+                lun: row.lun,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    session
+        .apply_partition_batch(
+            &requests,
+            &mut log,
+            |request, log| {
+                if let Some(image) = request.image {
+                    ltbox_core::live!(
+                        log,
+                        "[FlashParts] {}",
+                        tr_args!(
+                            "live_flashparts_flashing",
+                            label = request.label,
+                            file = image.display(),
+                            lun = request.lun
+                        )
+                    );
+                } else if let Some(row) = rows
+                    .iter()
+                    .find(|row| row.label == request.label && row.lun == request.lun)
+                {
+                    ltbox_core::live!(
+                        log,
+                        "[FlashParts] {}",
+                        tr_args!(
+                            "live_flashparts_erasing",
+                            label = request.label,
+                            lun = request.lun,
+                            sectors = row.num_sectors
+                        )
+                    );
                 }
-                let file_name = img
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.clone());
-                ltbox_core::live!(
-                    log,
-                    "[FlashParts] {}",
-                    tr_args!(
-                        "live_flashparts_flashing",
-                        label = row.label,
-                        file = file_name,
-                        lun = row.lun.to_string()
-                    )
-                );
+            },
+            || {
                 phases.mark_writes_started();
-                if let Err(e) = session.flash_partition_at(
-                    &row.label,
-                    img,
-                    row.lun,
-                    &row.start_sector.to_string(),
-                    row.num_sectors,
-                    &mut log,
-                ) {
-                    ltbox_core::live!(
-                        log,
-                        "[FlashParts] {}",
-                        tr_args!(
-                            "live_flashparts_part_failed",
-                            label = row.label,
-                            error = e.to_string()
-                        )
-                    );
-                    // Abort the remaining writes — a failed write can mean a
-                    // dropped link, and the device is left in EDL for retry.
-                    return Err(tr_args!(
-                        "err_flash_parts_part_failed",
-                        label = row.label,
-                        error = e.to_string()
-                    ));
-                }
-            }
-            FlashRowState::Erase => {
+            },
+        )
+        .map_err(|error| {
+            let erase = requests
+                .iter()
+                .any(|request| request.label == error.partition && request.image.is_none());
+            if erase {
                 ltbox_core::live!(
                     log,
                     "[FlashParts] {}",
                     tr_args!(
-                        "live_flashparts_erasing",
-                        label = row.label,
-                        lun = row.lun.to_string(),
-                        sectors = row.num_sectors.to_string()
+                        "live_flashparts_erase_failed",
+                        label = error.partition,
+                        error = error.source
                     )
                 );
-                // GPT sector counts are u64; reject counts the erase API
-                // cannot represent instead of truncating them.
-                let erase_outcome = match usize::try_from(row.num_sectors) {
-                    Ok(count) => {
-                        phases.mark_writes_started();
-                        session
-                            .erase_partition_at(
-                                &row.label,
-                                row.lun,
-                                &row.start_sector.to_string(),
-                                count,
-                                &mut log,
-                            )
-                            .map_err(|e| e.to_string())
-                    }
-                    Err(_) => Err(format!(
-                        "partition geometry out of range (start_sector={}, num_sectors={})",
-                        row.start_sector, row.num_sectors
-                    )),
-                };
-                if let Err(e) = erase_outcome {
-                    ltbox_core::live!(
-                        log,
-                        "[FlashParts] {}",
-                        tr_args!(
-                            "live_flashparts_erase_failed",
-                            label = row.label,
-                            error = e.to_string()
-                        )
-                    );
-                    return Err(tr_args!(
-                        "err_flash_parts_erase_failed",
-                        label = row.label,
-                        error = e.to_string()
-                    ));
-                }
+                tr_args!(
+                    "err_flash_parts_erase_failed",
+                    label = error.partition,
+                    error = error.source
+                )
+            } else {
+                ltbox_core::live!(
+                    log,
+                    "[FlashParts] {}",
+                    tr_args!(
+                        "live_flashparts_part_failed",
+                        label = error.partition,
+                        error = error.source
+                    )
+                );
+                tr_args!(
+                    "err_flash_parts_part_failed",
+                    label = error.partition,
+                    error = error.source
+                )
             }
-            FlashRowState::Skip => {}
-        }
-    }
+        })?;
 
     ltbox_core::live!(log, "[FlashParts] {}", phases.marker(3));
     ltbox_core::live!(
@@ -542,6 +541,20 @@ pub(crate) fn dump_parts_execute(
             return Err(msg);
         }
     };
+
+    let expected: Vec<_> = rows
+        .iter()
+        .map(|row| ltbox_device::edl::GptPartitionInfo {
+            lun: row.lun,
+            name: row.label.clone(),
+            start_sector: row.start_sector,
+            num_sectors: row.num_sectors,
+            size_bytes: row.size_bytes,
+        })
+        .collect();
+    session
+        .validate_partition_snapshot(&expected)
+        .map_err(|error| error.to_string())?;
 
     ltbox_core::live!(log, "[DumpParts] {}", phases.marker(2));
     let mut critical_failures: Vec<String> = Vec::new();

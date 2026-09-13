@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 
 mod partition_flash;
-pub use partition_flash::{PartitionFlash, PartitionFlashError};
+pub use partition_flash::{PartitionFlash, PartitionFlashError, PartitionOperation};
 
 use crate::driver::{QcomDriverMode, qcom_driver_mode};
 use ltbox_core::i18n::tr;
@@ -928,6 +928,34 @@ impl EdlSession {
         Ok((part.starting_lba, part.ending_lba))
     }
 
+    /// Revalidate all selected geometry before any transfer in this session.
+    /// Identical cloned GPTs still require a device-specific identity check.
+    pub fn validate_partition_snapshot(&mut self, expected: &[GptPartitionInfo]) -> Result<()> {
+        let sector_size = self.dev.fh_config().storage_sector_size as u64;
+        let mut seen = std::collections::BTreeSet::new();
+        for row in expected {
+            if !seen.insert((row.lun, row.name.as_str())) {
+                return Err(EdlError::Session(format!(
+                    "Duplicate partition selection: {}",
+                    row.name
+                )));
+            }
+            let (start, end) = self.find_partition(&row.name, 0, row.lun)?;
+            let sectors = Self::partition_span_sectors(&row.name, start, end)? as u64;
+            if start != row.start_sector
+                || sectors != row.num_sectors
+                || sector_size == 0
+                || sectors.checked_mul(sector_size) != Some(row.size_bytes)
+            {
+                return Err(EdlError::Session(format!(
+                    "Partition layout changed for {} on LUN {}; scan the device again",
+                    row.name, row.lun
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Dump a partition (GPT-by-name) to a file.
     pub fn dump_partition(
         &mut self,
@@ -1021,8 +1049,14 @@ impl EdlSession {
         log: &mut Vec<String>,
     ) -> Result<()> {
         let mut file = std::fs::File::open(image)?;
-        let file_len = file.metadata()?.len();
+        let metadata = file.metadata()?;
+        let file_len = metadata.len();
         let sector_size = self.dev.fh_config().storage_sector_size as u64;
+        if !metadata.is_file() || file_len == 0 || sector_size == 0 {
+            return Err(EdlError::Session(
+                "Flash requires a nonempty regular image and nonzero sector size".into(),
+            ));
+        }
         let image_sectors = file_len.div_ceil(sector_size);
         // Refuse to program past the partition — an oversized image would
         // spill into the next partition and brick the device. The by-name
@@ -1034,7 +1068,8 @@ impl EdlSession {
                 "Flash {part_name}: image is {image_sectors} sectors but the partition spans only {partition_sectors}"
             )));
         }
-        let num_sectors = image_sectors as usize;
+        let num_sectors = usize::try_from(image_sectors)
+            .map_err(|_| EdlError::Session("Image sector count exceeds usize".into()))?;
         ltbox_core::live!(
             log,
             "[EDL] {} {part_name} ← {} ({file_len} bytes, {num_sectors} sectors, LUN {lun})",
@@ -1131,8 +1166,14 @@ impl EdlSession {
         log: &mut Vec<String>,
     ) -> Result<()> {
         let mut file = std::fs::File::open(image)?;
-        let file_len = file.metadata()?.len();
+        let metadata = file.metadata()?;
+        let file_len = metadata.len();
         let sector_size = self.dev.fh_config().storage_sector_size as u64;
+        if !metadata.is_file() || file_len == 0 || sector_size == 0 {
+            return Err(EdlError::Session(
+                "Flash requires a nonempty regular image and nonzero sector size".into(),
+            ));
+        }
         let image_sectors = file_len.div_ceil(sector_size);
         // Capacity probe before the write: an oversized image would spill
         // past the last LBA (and on some Firehose implementations wrap or
@@ -1213,7 +1254,8 @@ impl EdlSession {
     /// geometry rather than silently touching a wrong, tiny span.
     fn partition_span_sectors(part_name: &str, start: u64, end: u64) -> Result<usize> {
         end.checked_sub(start)
-            .map(|delta| delta as usize + 1)
+            .and_then(|delta| delta.checked_add(1))
+            .and_then(|span| usize::try_from(span).ok())
             .ok_or_else(|| {
                 EdlError::Session(format!(
                     "{part_name}: invalid GPT range (start {start} > end {end})"
@@ -1259,9 +1301,16 @@ impl EdlSession {
         let span = Self::partition_span_sectors(part_name, start, end)?;
 
         let mut file = std::fs::File::open(image)?;
-        let file_len = file.metadata()?.len();
+        let metadata = file.metadata()?;
+        let file_len = metadata.len();
         let sector_size = self.dev.fh_config().storage_sector_size as u64;
-        let num_sectors = file_len.div_ceil(sector_size) as usize;
+        if !metadata.is_file() || file_len == 0 || sector_size == 0 {
+            return Err(EdlError::Session(
+                "Flash requires a nonempty regular image and nonzero sector size".into(),
+            ));
+        }
+        let num_sectors = usize::try_from(file_len.div_ceil(sector_size))
+            .map_err(|_| EdlError::Session("Image sector count exceeds usize".into()))?;
         // Refuse to program past the partition — an oversized image would
         // spill into the next partition and brick the device.
         if num_sectors > span {

@@ -182,28 +182,36 @@ pub(crate) fn unroot_worker(
         };
 
     live!(log, "[Unroot] {} ({restored_label})", phases.marker(5));
-    phases.mark_writes_started();
+    let mut requests = vec![ltbox_device::edl::PartitionFlash {
+        label: &root_image_label,
+        image: &root_image_path,
+        slot: 0,
+        lun: root_image_lun,
+    }];
+    if let Some(path) = &vbmeta_path {
+        requests.push(ltbox_device::edl::PartitionFlash {
+            label: &vbm_label,
+            image: path,
+            slot: 0,
+            lun: vbm_lun,
+        });
+    }
     session
-        .flash_partition(
-            &root_image_label,
-            &root_image_path,
-            0,
-            root_image_lun,
+        .flash_partition_batch(
+            &requests,
             &mut log,
+            |_, _, _| {},
+            || {
+                phases.mark_writes_started();
+            },
         )
         .map_err(|e| {
             tr_args!(
                 "err_unroot_flash_failed",
-                label = root_image_label,
-                error = e
+                label = e.partition,
+                error = e.source
             )
         })?;
-    if let Some(vbmeta_path) = &vbmeta_path {
-        phases.mark_writes_started();
-        session
-            .flash_partition(&vbm_label, vbmeta_path, 0, vbm_lun, &mut log)
-            .map_err(|e| tr_args!("err_unroot_flash_failed", label = vbm_label, error = e))?;
-    }
 
     live!(log, "[Unroot] {}", phases.marker(6));
     session

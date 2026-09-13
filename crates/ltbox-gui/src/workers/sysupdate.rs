@@ -555,30 +555,44 @@ pub(crate) fn sysupdate_worker(
                     count = flash_plan.len().to_string()
                 )
             );
-            for (part_name, image) in &flash_plan {
-                let lun = rescue_partition_lun(part_name)
-                    .ok_or_else(|| tr_args!("err_no_hardcoded_lun", partition = part_name))?;
-                phases.mark_writes_started();
-                if let Err(e) = session.flash_partition(part_name, image, 0, lun, &mut log) {
+            let requests = flash_plan
+                .iter()
+                .map(|(part_name, image)| {
+                    let lun = rescue_partition_lun(part_name)
+                        .ok_or_else(|| tr_args!("err_no_hardcoded_lun", partition = part_name))?;
+                    Ok(ltbox_device::edl::PartitionFlash {
+                        label: part_name,
+                        image,
+                        slot: 0,
+                        lun,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            session
+                .flash_partition_batch(
+                    &requests,
+                    &mut log,
+                    |_, _, _| {},
+                    || {
+                        phases.mark_writes_started();
+                    },
+                )
+                .map_err(|e| {
                     ltbox_core::live!(
                         log,
                         "[Rescue] {}",
                         tr_args!(
                             "live_rescue_flash_failed",
-                            name = part_name,
-                            error = e.to_string()
+                            name = e.partition,
+                            error = e.source
                         )
                     );
-                    // Abort before the reset — a failed recovery
-                    // write must not be followed by a reboot into
-                    // a half-written AVB set. Stay in EDL for retry.
-                    return Err(tr_args!(
+                    tr_args!(
                         "err_rescue_flash_failed",
-                        name = part_name,
-                        error = e.to_string()
-                    ));
-                }
-            }
+                        name = e.partition,
+                        error = e.source
+                    )
+                })?;
 
             ltbox_core::live!(log, "[Rescue] {}", phases.marker(7));
             ltbox_core::live!(

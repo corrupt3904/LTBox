@@ -19,6 +19,7 @@ enum Event {
     Partition(String),
     Start,
     Program(u64, usize),
+    Erase(u64, usize),
     Payload(Vec<u8>),
 }
 
@@ -140,6 +141,19 @@ impl Write for Transport {
                 );
                 response.extend_from_slice(ACK);
                 self.responses = Cursor::new(response);
+            }
+            "erase" => {
+                let start = command.attribute("start_sector").unwrap().parse().unwrap();
+                let sectors = command
+                    .attribute("num_partition_sectors")
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(Event::Erase(start, sectors));
+                self.responses = Cursor::new(ACK.to_vec());
             }
             "program" => {
                 let start = command.attribute("start_sector").unwrap().parse().unwrap();
@@ -439,4 +453,112 @@ fn delayed_final_ack_blocks_next_partition_until_released() {
     let mut expected = expected_program(0, Some(1024));
     expected.extend(expected_program(1, Some(1024)));
     assert_eq!(*events.lock().unwrap(), expected);
+}
+
+#[test]
+fn partition_snapshot_rejects_stale_coordinates_and_sector_size_before_programming() {
+    for mismatch in [
+        "none",
+        "start",
+        "length",
+        "sector-size",
+        "label",
+        "duplicate",
+    ] {
+        let mut fixture = Fixture::new(512, false, None);
+        let mut row = super::super::GptPartitionInfo {
+            lun: 4,
+            name: LABELS[0].into(),
+            start_sector: STARTS[0],
+            num_sectors: CAPACITIES[0],
+            size_bytes: CAPACITIES[0] * 512,
+        };
+        match mismatch {
+            "start" => row.start_sector += 1,
+            "length" => row.num_sectors += 1,
+            "sector-size" => row.size_bytes *= 8,
+            "label" => row.name = "absent".into(),
+            _ => {}
+        }
+        let rows = if mismatch == "duplicate" {
+            vec![row.clone(), row]
+        } else {
+            vec![row]
+        };
+        assert_eq!(
+            fixture.session.validate_partition_snapshot(&rows).is_ok(),
+            mismatch == "none"
+        );
+        assert!(fixture.events.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn mixed_batch_validates_later_sources_before_erasing_and_preserves_order() {
+    for valid in [false, true] {
+        let mut fixture = Fixture::new(512, false, None);
+        if !valid {
+            std::fs::write(&fixture.images[1], []).unwrap();
+        }
+        let requests = [
+            super::PartitionOperation {
+                label: LABELS[0],
+                image: None,
+                slot: 0,
+                lun: 4,
+            },
+            super::PartitionOperation {
+                label: LABELS[1],
+                image: Some(&fixture.images[1]),
+                slot: 0,
+                lun: 4,
+            },
+        ];
+        let result =
+            fixture
+                .session
+                .apply_partition_batch(&requests, &mut Vec::new(), |_, _| {}, || {});
+        assert_eq!(result.is_ok(), valid);
+        let events = fixture.events.lock().unwrap();
+        if valid {
+            assert_eq!(events[0], Event::Erase(STARTS[0], CAPACITIES[0] as usize));
+            assert_eq!(events[1], Event::Program(STARTS[1], 2));
+        } else {
+            assert!(events.is_empty());
+        }
+    }
+}
+
+#[test]
+fn partition_span_rejects_overflow() {
+    assert!(EdlSession::partition_span_sectors("overflow", 0, u64::MAX).is_err());
+}
+
+#[test]
+fn single_image_apis_reject_empty_sources_without_programming() {
+    for api in ["partition", "coordinates", "physical"] {
+        let mut fixture = Fixture::new(512, false, None);
+        std::fs::write(&fixture.images[0], []).unwrap();
+        let mut log = Vec::new();
+        let result = match api {
+            "partition" => {
+                fixture
+                    .session
+                    .flash_partition(LABELS[0], &fixture.images[0], 0, 4, &mut log)
+            }
+            "coordinates" => fixture.session.flash_partition_at(
+                LABELS[0],
+                &fixture.images[0],
+                4,
+                "64",
+                CAPACITIES[0],
+                &mut log,
+            ),
+            _ => fixture
+                .session
+                .flash_physical_storage(4, &fixture.images[0], &mut log),
+        };
+        assert!(result.is_err(), "{api}");
+        assert!(fixture.events.lock().unwrap().is_empty());
+    }
 }
