@@ -57,6 +57,16 @@ pub(crate) fn unroot_worker(
     {
         return Err(tr_args!("model_unsupported", model = "TB376FC / TB390FU"));
     }
+    if !ltbox_core::model::capabilities(&device_model).root_uses_gbl {
+        ltbox_patch::avb::verify_root_backup(&root_image_path, vbmeta_path.as_deref(), base_part)
+            .map_err(|error| {
+            tr_args!(
+                "err_unroot_image_avb_failed",
+                image = root_image_name,
+                error = error
+            )
+        })?;
+    }
     // Names the images this run will write, so the pre-flight line and the
     // Phase 4 header agree with what actually gets flashed.
     let restored_label = if vbmeta_path.is_some() {

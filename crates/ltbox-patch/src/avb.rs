@@ -215,6 +215,52 @@ pub fn hash_descriptor(
         })
 }
 
+/// Verify the root payload against its own AVB hash and, when restored,
+/// require vbmeta to contain the exact same root hash descriptor. This is
+/// integrity validation, not proof that the signer is trusted by a device.
+pub fn verify_root_backup(image: &Path, vbmeta: Option<&Path>, partition: &str) -> Result<()> {
+    let info =
+        avbtool_rs::image::inspect_avb_image(image).map_err(|e| LtboxError::Avb(e.to_string()))?;
+    let expected_name = format!("{partition}.img");
+    if image.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
+        return Err(LtboxError::Avb(
+            "Root backup filename does not match its partition".into(),
+        ));
+    }
+    // The upstream verifier resolves descriptors through sibling filenames.
+    // Restrict this self-check to the selected root image, never arbitrary paths.
+    if info.descriptors.iter().any(|d| matches!(d,
+        avbtool_rs::info::DescriptorInfo::Hash { partition_name, .. } if partition_name != partition)
+        || matches!(d, avbtool_rs::info::DescriptorInfo::Hashtree { .. } | avbtool_rs::info::DescriptorInfo::ChainPartition { .. })) {
+        return Err(LtboxError::Avb("Unexpected descriptor in root backup".into()));
+    }
+    let descriptor = hash_descriptor(image, partition)?;
+    if matches!(&descriptor, avbtool_rs::info::DescriptorInfo::Hash { digest, .. } if digest.is_empty())
+    {
+        return Err(LtboxError::Avb(
+            "Root backup has no verifiable digest".into(),
+        ));
+    }
+    avbtool_rs::verify::verify_image(
+        image,
+        &avbtool_rs::verify::VerifyImageOptions {
+            key_blob: None,
+            expected_chain_partitions: Vec::new(),
+            follow_chain_partitions: false,
+            accept_zeroed_hashtree: false,
+        },
+    )
+    .map_err(|e| LtboxError::Avb(e.to_string()))?;
+    if let Some(vbmeta) = vbmeta
+        && hash_descriptor(vbmeta, partition)? != descriptor
+    {
+        return Err(LtboxError::Avb(
+            "Root backup and vbmeta hash descriptors do not match".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// The AVB algorithm name for a signing-key spec (bundled name or PEM path),
 /// e.g. `testkey_rsa4096` -> `SHA256_RSA4096`, derived from the key's size. Used
 /// to keep a rebuild's algorithm consistent with a key override.
@@ -522,6 +568,37 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn backup_verification_rejects_payload_corruption_that_metadata_inspection_accepts() {
+        use std::io::{Seek, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("vendor_boot.img");
+        let paired = dir.path().join("vbmeta.img");
+        write_hash_footer_fixture(&image, "sha256", Vec::new());
+        fs::write(
+            &paired,
+            avbtool_rs::image::load_vbmeta_blob(&image).unwrap(),
+        )
+        .unwrap();
+        verify_root_backup(&image, Some(&paired), "vendor_boot").unwrap();
+        let before = extract_image_avb_info(&image).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&image)
+            .unwrap();
+        file.seek(std::io::SeekFrom::Start(0)).unwrap();
+        file.write_all(&[0x42]).unwrap();
+        drop(file);
+        let after = extract_image_avb_info(&image).unwrap();
+        assert_eq!(before.rollback_index, after.rollback_index);
+        assert_eq!(build_fingerprint(&before), build_fingerprint(&after));
+        assert!(verify_root_backup(&image, Some(&paired), "vendor_boot").is_err());
+        // Rebuild a valid but different payload while retaining the old pair.
+        add_hash_footer(&image, &before, None, None).unwrap();
+        verify_root_backup(&image, None, "vendor_boot").unwrap();
+        assert!(verify_root_backup(&image, Some(&paired), "vendor_boot").is_err());
     }
 
     #[test]
