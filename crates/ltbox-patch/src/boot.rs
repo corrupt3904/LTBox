@@ -65,8 +65,7 @@ pub fn cpio_checked(work_dir: &Path, cpio_file: &str, commands: &[&str]) -> Resu
 /// patcher reads `KEEPVERITY` / `KEEPFORCEENCRYPT` from the process env at
 /// call time. Without them magiskboot defaults to *stripping* dm-verity and
 /// forceencrypt fstab flags — the opposite of what stock-preserving root
-/// wants. Env is process-global; the CWD lock held by `run_magiskboot_with_env`
-/// serializes the set/restore so concurrent calls don't leak values.
+/// wants. Overrides apply only to the isolated child process.
 ///
 /// Always checked: patch is a mutation, a non-zero rc means nothing to repack.
 pub fn cpio_with_env(
@@ -117,70 +116,78 @@ pub fn decompress(work_dir: &Path, input: &str, output: &str) -> Result<()> {
     )
 }
 
-/// Process-wide CWD guard: `boot_main` resolves filenames relative to CWD,
-/// so we must `chdir` into `work_dir`. PollDevice fires concurrently via
-/// `spawn_blocking` — a static mutex serializes the chdir/run/restore sequence.
-static MAGISKBOOT_CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Hosts can reuse their executable as the isolated magiskboot child. Call
+/// `dispatch_magiskboot_helper` at the very start of main, before GUI/runtime
+/// initialization, and register that executable for subsequent patch calls.
+static MAGISKBOOT_HOST: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+const HELPER_FLAG: &str = "--ltbox-internal-magiskboot";
+
+pub fn register_magiskboot_host(path: std::path::PathBuf) -> Result<()> {
+    MAGISKBOOT_HOST
+        .set(path)
+        .map_err(|_| LtboxError::BootImage("magiskboot host already registered".into()))
+}
+
+/// Returns `None` for ordinary application invocations. The child inherits its
+/// working directory and patch flags from `Command`, never changing the host.
+pub fn dispatch_magiskboot_helper() -> Option<i32> {
+    let mut args = std::env::args();
+    args.next();
+    if args.next().as_deref() != Some(HELPER_FLAG) {
+        return None;
+    }
+    let full_args = std::iter::once("magiskboot".to_owned())
+        .chain(args)
+        .collect();
+    let cmds = magiskboot::base::CmdArgs::from_env_args(full_args);
+    Some(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            magiskboot::cli::boot_main(cmds).unwrap_or(1)
+        }))
+        .unwrap_or(1),
+    )
+}
 
 fn run_magiskboot(work_dir: &Path, args: &[&str]) -> Result<i32> {
     run_magiskboot_with_env(work_dir, args, &[])
 }
 
 fn run_magiskboot_with_env(work_dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> Result<i32> {
-    // Recover from poisoning: inner catch_unwind turns magiskboot panics
-    // into errors, so the mutex stays safe to reuse.
-    let _guard = MAGISKBOOT_CWD_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-
-    let original_dir = std::env::current_dir().ok();
-    std::env::set_current_dir(work_dir).map_err(|e| LtboxError::BootImage(e.to_string()))?;
-
-    // Snapshot env values we're about to override so we can restore them.
-    // Important because the env is process-global — leaking KEEPVERITY=true
-    // into a subsequent call could invert behavior.
-    let saved_envs: Vec<(&str, Option<String>)> = envs
-        .iter()
-        .map(|(k, _)| (*k, std::env::var(*k).ok()))
-        .collect();
-    for (k, v) in envs {
-        // SAFETY: std::env::set_var is unsafe on Rust 1.82+ due to data races
-        // in multithreaded programs. The CWD lock above serializes magiskboot
-        // calls, but other threads might still read env concurrently. Callers
-        // pass only static-config vars (KEEPVERITY etc.) that magiskboot
-        // itself reads inside the same lock scope.
-        unsafe { std::env::set_var(k, v) };
-    }
-
-    let mut full_args = vec!["magiskboot".to_string()];
-    full_args.extend(args.iter().map(|s| s.to_string()));
-    let cmds = magiskboot::base::CmdArgs::from_env_args(full_args);
-
-    // catch_unwind surfaces magiskboot-rs panics as Err so the GUI stays alive.
-    let args_repr = args.join(" ");
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        magiskboot::cli::boot_main(cmds).unwrap_or(1)
-    }));
-
-    // Restore env regardless of outcome so a panicking magiskboot doesn't
-    // leave KEEPVERITY set for unrelated callers.
-    for (k, old) in &saved_envs {
-        match old {
-            Some(v) => unsafe { std::env::set_var(k, v) },
-            None => unsafe { std::env::remove_var(k) },
+    let executable = match MAGISKBOOT_HOST.get() {
+        Some(path) => path.clone(),
+        None => {
+            // Standalone library tests/consumers may install the companion
+            // binary next to their executable (Cargo tests live under deps/).
+            let current = std::env::current_exe()?;
+            let mut directory = current
+                .parent()
+                .ok_or_else(|| LtboxError::BootImage("No executable directory".into()))?;
+            if directory.file_name().is_some_and(|name| name == "deps") {
+                directory = directory.parent().unwrap_or(directory);
+            }
+            directory.join(format!("ltbox-magiskboot{}", std::env::consts::EXE_SUFFIX))
         }
+    };
+    let mut command = std::process::Command::new(executable);
+    command
+        .arg(HELPER_FLAG)
+        .args(args)
+        .current_dir(work_dir)
+        .envs(envs.iter().copied())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-
-    if let Some(dir) = original_dir {
-        let _ = std::env::set_current_dir(dir);
-    }
-
-    match result {
-        Ok(code) => Ok(code),
-        Err(_) => Err(LtboxError::BootImage(format!(
-            "magiskboot panicked while running: {args_repr}"
-        ))),
-    }
+    let status = command.status().map_err(|e| {
+        LtboxError::BootImage(format!("Cannot run isolated magiskboot helper: {e}"))
+    })?;
+    status.code().ok_or_else(|| {
+        LtboxError::BootImage("magiskboot helper terminated without an exit code".into())
+    })
 }
 
 fn sha1_hash(data: &[u8]) -> String {

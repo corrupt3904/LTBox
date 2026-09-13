@@ -194,6 +194,13 @@ const fn package_upgrade_command(
 }
 
 fn main() -> iced::Result {
+    if let Some(code) = ltbox_patch::boot::dispatch_magiskboot_helper() {
+        std::process::exit(code);
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        // Register before any worker starts. GUI releases need no companion binary.
+        let _ = ltbox_patch::boot::register_magiskboot_host(executable);
+    }
     // Linux/X11 renderer default. On some X11 + Mesa/driver combos wgpu
     // selects a Vulkan adapter whose X11 surface/device creation fails, so
     // the window never appears and `./ltbox` looks dead (issue #69). OpenGL

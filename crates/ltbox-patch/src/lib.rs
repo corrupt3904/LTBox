@@ -1,6 +1,8 @@
 //! Patching engine — AVB, boot image, region patching.
 //!
-//! Wraps `avbtool-rs` + `magiskboot` library APIs in-process; no subprocesses.
+//! Uses `avbtool-rs` in-process and isolates magiskboot CLI operations in a child.
+//! GUI hosts register their executable; standalone consumers install the
+//! `ltbox-magiskboot` companion next to their executable.
 
 pub mod abl_key;
 pub mod apatch;
