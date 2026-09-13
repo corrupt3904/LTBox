@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+mod atomic_dump;
 mod partition_flash;
 pub use partition_flash::{PartitionFlash, PartitionFlashError, PartitionOperation};
 
@@ -971,9 +972,8 @@ impl EdlSession {
             tr("log_edl_lookup_partition")
         );
         let (start, end) = self.find_partition(part_name, slot, lun)?;
-        // Reject degenerate GPT entries up-front: end<start wraps under
-        // u64, end==start is a zero-sector partition (valid but nothing to
-        // dump), and a sector count past usize::MAX cannot be allocated.
+        // GPT bounds are inclusive: end == start spans one sector.
+        // Reject inverted ranges and counts that cannot be represented.
         let span = end
             .checked_sub(start)
             .and_then(|d| d.checked_add(1))
@@ -991,15 +991,17 @@ impl EdlSession {
             tr("log_edl_found_partition")
         );
 
-        let mut out_file = std::fs::File::create(output)?;
         ltbox_core::live!(
             log,
             "[EDL] {} {part_name} → {}",
             tr("log_edl_dump_cmd"),
             output.display()
         );
-        qdl::firehose_read_storage(&mut self.dev, &mut out_file, sectors, slot, lun, start)
-            .map_err(|e| EdlError::Session(format!("Partition read failed: {e}")))?;
+        let expected = padded_transfer_bytes(sectors, self.dev.fh_config().storage_sector_size)?;
+        atomic_dump::write_dump(output, expected, |file| {
+            qdl::firehose_read_storage(&mut self.dev, file, sectors, slot, lun, start)
+                .map_err(|e| EdlError::Session(format!("Partition read failed: {e}")))
+        })?;
         ltbox_core::live!(log, "[EDL] {} {part_name}", tr("log_edl_dumped"));
         Ok(())
     }
@@ -1017,22 +1019,18 @@ impl EdlSession {
         num_sectors: usize,
         log: &mut Vec<String>,
     ) -> Result<()> {
-        let mut out_file = std::fs::File::create(output)?;
         ltbox_core::live!(
             log,
             "[EDL] {} {part_name} → {} (LUN {lun}, start {start_sector}, {num_sectors} sectors)",
             tr("log_edl_dump_cmd"),
             output.display()
         );
-        qdl::firehose_read_storage(
-            &mut self.dev,
-            &mut out_file,
-            num_sectors,
-            0,
-            lun,
-            start_sector,
-        )
-        .map_err(|e| EdlError::Session(format!("Partition read failed: {e}")))?;
+        let expected =
+            padded_transfer_bytes(num_sectors, self.dev.fh_config().storage_sector_size)?;
+        atomic_dump::write_dump(output, expected, |file| {
+            qdl::firehose_read_storage(&mut self.dev, file, num_sectors, 0, lun, start_sector)
+                .map_err(|e| EdlError::Session(format!("Partition read failed: {e}")))
+        })?;
         ltbox_core::live!(log, "[EDL] {} {part_name}", tr("log_edl_dumped"));
         Ok(())
     }
@@ -1136,7 +1134,6 @@ impl EdlSession {
         log: &mut Vec<String>,
     ) -> Result<()> {
         let total = self.physical_lun_sector_count(lun, log)?;
-        let mut out_file = std::fs::File::create(output)?;
         ltbox_core::live!(
             log,
             "[EDL] {}",
@@ -1145,8 +1142,13 @@ impl EdlSession {
                 .replace("{path}", &output.display().to_string())
                 .replace("{total}", &total.to_string())
         );
-        qdl::firehose_read_storage(&mut self.dev, &mut out_file, total as usize, 0, lun, 0)
-            .map_err(|e| EdlError::Session(format!("Physical LUN read failed: {e}")))?;
+        let sectors = usize::try_from(total)
+            .map_err(|_| EdlError::Session("LUN sector count exceeds usize".into()))?;
+        let expected = padded_transfer_bytes(sectors, self.dev.fh_config().storage_sector_size)?;
+        atomic_dump::write_dump(output, expected, |file| {
+            qdl::firehose_read_storage(&mut self.dev, file, sectors, 0, lun, 0)
+                .map_err(|e| EdlError::Session(format!("Physical LUN read failed: {e}")))
+        })?;
         ltbox_core::live!(
             log,
             "[EDL] {}",

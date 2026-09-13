@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+tempfile = "3"
 ltbox-core = { path = "../ltbox-core" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
