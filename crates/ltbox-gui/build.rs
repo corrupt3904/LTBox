@@ -1,28 +1,29 @@
 fn main() {
-    // Lucide icon subset codegen. Reads `fonts/lucide.toml`, subsets
-    // the bundled `lucide.ttf` to just the declared glyphs, and
-    // writes `src/icon.rs` with one `Text`-returning function per
-    // entry. Rerun only when the TOML changes.
+    // Generate both Rust and the subset font under OUT_DIR. The upstream
+    // builder accepts an absolute module path, avoiding tracked source writes.
     println!("cargo:rerun-if-changed=fonts/lucide.toml");
-    iced_lucide::build("fonts/lucide.toml").expect("Failed to generate Lucide icon module");
-
-    // Short git commit for the About panel's build identifier. Empty outside a
-    // git checkout (e.g. a source tarball) — the About panel then shows the
-    // version alone.
-    emit_git_hash();
-    // iced_lucide is written against iced's git HEAD where
-    // `Font::new(&'static str)` exists. iced 0.14 on crates.io
-    // renamed that ctor to `Font::with_name`, so patch the generated
-    // module to match before rustc consumes it.
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    let module = out.join("icon").to_string_lossy().replace('\\', "/");
+    let definition = std::fs::read_to_string("fonts/lucide.toml").expect("Read icon definition");
+    assert!(definition.contains("module = \"icon\""));
+    let definition = definition.replace("module = \"icon\"", &format!("module = {module:?}"));
+    let generated_definition = out.join("lucide.toml");
+    if std::fs::read_to_string(&generated_definition)
+        .ok()
+        .as_deref()
+        != Some(&definition)
     {
-        let path = std::path::Path::new("src/icon.rs");
-        if let Ok(src) = std::fs::read_to_string(path) {
-            let patched = src.replace("Font::new(", "Font::with_name(");
-            if patched != src {
-                std::fs::write(path, patched).expect("Failed to patch icon.rs for iced 0.14");
-            }
-        }
+        std::fs::write(&generated_definition, definition).expect("Write generated icon definition");
     }
+    iced_lucide::build(&generated_definition).expect("Generate Lucide icons");
+    // The pinned generator targets iced git; our iced 0.14 uses with_name.
+    let generated = out.join("icon.rs");
+    let source = std::fs::read_to_string(&generated).expect("Read generated icon module");
+    let adapted = source.replace("Font::new(", "Font::with_name(");
+    if adapted != source {
+        std::fs::write(generated, adapted).expect("Adapt generated icon module for iced 0.14");
+    }
+    emit_git_hash();
 
     // `#[cfg(target_os = "windows")]` evaluates against the HOST that
     // build.rs runs on, not the cargo --target. On a Linux runner

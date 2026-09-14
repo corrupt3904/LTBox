@@ -1,4 +1,4 @@
-# iced_lucide subset definition — generates `src/icon.rs` at build
+# iced_lucide subset definition — generates `OUT_DIR/icon.rs` at build
 # time with one Text-returning function per entry.
 #
 # Format: `<rust_fn_name> = "<lucide-kebab-case-name>"`.

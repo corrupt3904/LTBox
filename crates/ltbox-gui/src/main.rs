@@ -11,10 +11,10 @@
 //! Sub-modules: [`theme`] M3 tokens · [`settings_store`] `settings.json`
 //! in the user config dir · [`stdout_tap`] native-crate log capture.
 
-#[rustfmt::skip]
 #[allow(dead_code)]
-#[path = "icon.rs"]
-mod icon;
+mod icon {
+    include!(concat!(env!("OUT_DIR"), "/icon.rs"));
+}
 mod arb;
 mod arb_overlay;
 mod backup;
