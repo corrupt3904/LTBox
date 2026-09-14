@@ -130,7 +130,8 @@ impl App {
             .style(banner_filled_btn_style);
         let mut body_copy = column![
             text(self.t("dash_software_fix_desc").to_string())
-                .size(theme::text_size::BODY_SMALL)
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .style(warning_container_text_style),
         ]
         .spacing(8.0)
@@ -138,22 +139,25 @@ impl App {
         if let Some(key) = self.software_fix.error_key {
             body_copy = body_copy.push(
                 text(self.t(key).to_string())
-                    .size(theme::text_size::BODY_SMALL)
+                    .size(theme::text_size::BODY_MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                     .style(warning_container_text_style),
             );
         }
-        self.message_banner(
+        self.message_banner_with_trailing(
             BannerSeverity::Warning,
             icon::banner_warning(),
             self.t("dash_software_fix_title").to_string(),
-            row![body_copy, action]
-                .spacing(16.0)
-                .align_y(iced::Alignment::Center)
-                .width(Length::Fill),
+            body_copy,
+            Some(action.into()),
         )
     }
 
     pub(crate) fn view_dashboard(&self) -> Element<'_, Message> {
+        iced::widget::responsive(move |size| self.dashboard_at_height(size.height)).into()
+    }
+
+    fn dashboard_at_height(&self, viewport_height: f32) -> Element<'_, Message> {
         let model = if self.device.model.is_empty() {
             "—"
         } else {
@@ -189,25 +193,18 @@ impl App {
         } else {
             &self.device.storage
         };
-        // Title + divider dropped — sidebar already labels the active view,
-        // so the duplicate header was eating vertical space without telling
-        // the user anything new. `height(Fill)` so the log card (the last
-        // child) can claim the remaining vertical space — keeps the top +
-        // bottom dashboard margins symmetric.
-        let mut content = column![]
-            .spacing(14.0)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let mut banners: Vec<Element<'_, Message>> = Vec::new();
 
         if self.software_fix.running {
-            content = content.push(self.software_fix_banner());
+            banners.push(self.software_fix_banner());
         }
 
         // Unauthorized ADB wins over the platform warning — empty
         // `ro.boot.hardware` otherwise reads as "unsupported platform".
         if self.device.connection == ConnectionStatus::AdbServerBlocking {
             let msg = text(self.t("dash_adb_server_blocking").to_string())
-                .size(theme::text_size::BODY_SMALL)
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .style(warning_container_text_style)
                 .width(Length::Fill);
             let kill_btn = button(
@@ -219,49 +216,48 @@ impl App {
             .padding([10.0, 18.0])
             .height(Length::Fixed(40.0))
             .style(banner_filled_btn_style);
-            content = content.push(
-                self.message_banner(
-                    BannerSeverity::Warning,
-                    icon::banner_warning(),
-                    self.t("banner_warning_title").to_string(),
-                    row![msg, kill_btn]
-                        .spacing(12.0)
-                        .width(Length::Fill)
-                        .align_y(iced::Alignment::Center),
-                ),
-            );
+            banners.push(self.message_banner_with_trailing(
+                BannerSeverity::Warning,
+                icon::banner_warning(),
+                self.t("banner_warning_title").to_string(),
+                msg,
+                Some(kill_btn.into()),
+            ));
         } else if self.device.connection == ConnectionStatus::AdbUnauthorized {
-            content = content.push(
+            banners.push(
                 self.message_banner(
                     BannerSeverity::Warning,
                     icon::banner_warning(),
                     self.t("banner_warning_title").to_string(),
                     text(self.t("dash_adb_unauthorized").to_string())
-                        .size(theme::text_size::BODY_SMALL)
+                        .size(theme::text_size::BODY_MEDIUM)
+                        .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                         .style(warning_container_text_style)
                         .width(Length::Fill),
                 ),
             );
         } else if self.device.connection == ConnectionStatus::AdbSideload {
-            content = content.push(
+            banners.push(
                 self.message_banner(
                     BannerSeverity::Warning,
                     icon::banner_warning(),
                     self.t("banner_warning_title").to_string(),
                     text(self.t("dash_adb_sideload").to_string())
-                        .size(theme::text_size::BODY_SMALL)
+                        .size(theme::text_size::BODY_MEDIUM)
+                        .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                         .style(warning_container_text_style)
                         .width(Length::Fill),
                 ),
             );
         } else if self.device.platform_supported == Some(false) {
-            content = content.push(
+            banners.push(
                 self.message_banner(
                     BannerSeverity::Warning,
                     icon::banner_warning(),
                     self.t("banner_warning_title").to_string(),
                     text(self.t("dash_unsupported_platform").to_string())
-                        .size(theme::text_size::BODY_SMALL)
+                        .size(theme::text_size::BODY_MEDIUM)
+                        .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                         .style(warning_container_text_style)
                         .width(Length::Fill),
                 ),
@@ -269,8 +265,13 @@ impl App {
         }
 
         if let Some(banner) = self.driver_install_banner() {
-            content = content.push(banner);
+            banners.push(banner);
         }
+
+        let mut content = column![]
+            .spacing(14.0)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         // Reserve the portrait's height even before a model is known.
         let mut identity = row![]
@@ -583,7 +584,24 @@ impl App {
             content = content.push(resume);
         }
         content = content.push(log_card);
-        content.into()
+        if banners.is_empty() {
+            content.into()
+        } else {
+            // Give the cards the same viewport height they receive without a
+            // banner. Alerts extend the page instead of squeezing the log.
+            iced::widget::scrollable(
+                column![
+                    iced::widget::Column::with_children(banners).spacing(14.0),
+                    content.height(viewport_height),
+                ]
+                .spacing(14.0)
+                .width(Length::Fill),
+            )
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .style(m3_scrollable_style)
+            .into()
+        }
     }
 }
 

@@ -84,6 +84,23 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, msg: Message) -> Task<Message> {
+        let previous_error = self.error_msg.clone();
+        let task = self.update_with_gates(msg);
+        if self.error_msg != previous_error
+            && let Some(error) = self.error_msg.clone()
+            && !self
+                .log_lines
+                .last()
+                .is_some_and(|line| line.contains(&error))
+        {
+            // Banners show only a summary. Preserve the complete diagnostic
+            // even for validation and picker failures outside OperationError.
+            self.log_push(tr_args!("log_operation_error", error = error));
+        }
+        task
+    }
+
+    fn update_with_gates(&mut self, msg: Message) -> Task<Message> {
         let msg = match msg {
             Message::DeviceLookupEvent(token, message) => {
                 if !self.queries.finish_lookup(token) {

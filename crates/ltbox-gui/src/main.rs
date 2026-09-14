@@ -1100,8 +1100,27 @@ fn concise_error_summary(error: &str, max_chars: usize) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    // Keep the first diagnostic sentence, excluding follow-up instructions and
+    // nested details. A period inside a filename, version or URL is not a stop.
+    let end = summary
+        .char_indices()
+        .find_map(|(index, ch)| {
+            let rest = &summary[index + ch.len_utf8()..];
+            let sentence_end = matches!(ch, '。' | '！' | '？')
+                || (matches!(ch, '.' | '!' | '?') && rest.starts_with(char::is_whitespace));
+            let detail_start = (ch == ':' && rest.starts_with(char::is_whitespace)) || ch == '：';
+            if sentence_end {
+                Some(index + ch.len_utf8())
+            } else if detail_start && index > 0 {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(summary.len());
+    let summary = summary[..end].trim();
     if summary.chars().count() <= max_chars {
-        return summary;
+        return summary.to_owned();
     }
     if max_chars == 0 {
         return String::new();
@@ -5470,6 +5489,68 @@ mod tests {
             "loader handshake failed"
         );
         assert_eq!(concise_error_summary("가나다라마바사", 5), "가나다라…");
+    }
+
+    #[test]
+    fn error_summary_keeps_diagnosis_without_followup_or_nested_details() {
+        for (full, expected) in [
+            (
+                "30s 이내에 활성 슬롯을 감지하지 못했습니다. Android나 복구 모드에서 다시 시도하세요.",
+                "30s 이내에 활성 슬롯을 감지하지 못했습니다.",
+            ),
+            (
+                "Unable to detect the active slot. Connect using ADB and retry.",
+                "Unable to detect the active slot.",
+            ),
+            (
+                "スロットを検出できませんでした。再試行してください。",
+                "スロットを検出できませんでした。",
+            ),
+            ("无法检测当前槽位。请重试。", "无法检测当前槽位。"),
+            (
+                "Не удалось определить слот. Повторите попытку.",
+                "Не удалось определить слот.",
+            ),
+            (
+                "EDL 세션 열기 실패: USB error\nstack detail",
+                "EDL 세션 열기 실패",
+            ),
+            (
+                "boot.img version 1.2.3 failed. Retry.",
+                "boot.img version 1.2.3 failed.",
+            ),
+            (
+                "C:\\firmware\\boot.img not found",
+                "C:\\firmware\\boot.img not found",
+            ),
+        ] {
+            assert_eq!(concise_error_summary(full, 120), expected);
+        }
+        assert_eq!(concise_error_summary("failure", 0), "");
+    }
+
+    #[test]
+    fn banner_only_validation_errors_preserve_full_details_in_log() {
+        let mut app = App::default();
+        let _ = app.update(Message::OperationError(
+            "First sentence. Full recovery instructions.".into(),
+        ));
+        assert_eq!(
+            app.error_msg.as_deref(),
+            Some("First sentence. Full recovery instructions.")
+        );
+        assert!(
+            app.log_lines
+                .iter()
+                .any(|line| line.contains("Full recovery instructions."))
+        );
+        assert_eq!(
+            app.log_lines
+                .iter()
+                .filter(|line| line.contains("Full recovery instructions."))
+                .count(),
+            1
+        );
     }
 
     #[test]

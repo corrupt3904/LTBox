@@ -286,7 +286,8 @@ impl App {
                 icon::banner_warning(),
                 self.t("reboot_confirm_warning_title").to_string(),
                 text(self.t("reboot_confirm_warning_body").to_string())
-                    .size(theme::text_size::BODY_SMALL)
+                    .size(theme::text_size::BODY_MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                     .style(warning_container_text_style)
                     .width(Length::Fill)
                     .wrapping(iced::widget::text::Wrapping::WordOrGlyph),

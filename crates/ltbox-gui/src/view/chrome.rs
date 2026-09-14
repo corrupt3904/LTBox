@@ -700,10 +700,20 @@ impl App {
             }
         });
 
-        let body = text(msg.to_string())
-            .size(theme::text_size::BODY_SMALL)
-            .style(error_container_text_style)
-            .width(Length::Fill);
+        // Reserve icon, padding and dismiss control; a conservative CJK-width
+        // budget also keeps long localized diagnostics on one physical line.
+        let budget = ((self.window_size.0 - 220.0).max(80.0) / theme::text_size::BODY_MEDIUM)
+            .floor() as usize;
+        let body = container(
+            text(concise_error_summary(msg, budget))
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
+                .style(error_container_text_style)
+                .wrapping(iced::widget::text::Wrapping::None)
+                .width(Length::Fill),
+        )
+        .width(Length::Fill)
+        .clip(true);
         let card = self.message_banner_with_trailing(
             BannerSeverity::Error,
             icon::banner_error(),
@@ -811,7 +821,7 @@ impl App {
         self.message_banner_with_trailing(severity, icon_glyph, title, body, None)
     }
 
-    fn message_banner_with_trailing<'a>(
+    pub(crate) fn message_banner_with_trailing<'a>(
         &self,
         severity: BannerSeverity,
         icon_glyph: iced::widget::Text<'static, Theme, iced::Renderer>,
@@ -836,22 +846,23 @@ impl App {
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center);
         let title = text(title.into())
-            .size(theme::text_size::BODY_MEDIUM)
+            .size(theme::text_size::TITLE_MEDIUM)
+            .line_height(iced::widget::text::LineHeight::Absolute(24.0.into()))
             .font(theme::emphasis::medium())
             .style(move |t: &Theme| iced::widget::text::Style {
                 color: Some(foreground(t)),
             });
         let copy = column![title, body.into()]
-            .spacing(2)
+            .spacing(4)
             .width(Length::Fill)
             .align_x(iced::Alignment::Start);
-        // A dismiss target belongs beside the complete title/body block.
-        // Putting it in the body made that line 40px tall below the title,
-        // leaving excess space below short messages and lowering the close icon.
+        // Actions belong beside the complete title/body block. Nesting them
+        // in the body adds their height below the headline and pulls them down.
+        // The outer row centres every action against the whole banner.
         let has_trailing = trailing.is_some();
         let mut content = row![icon, copy]
             .spacing(13)
-            .padding([13, 16])
+            .padding([10, 16])
             .width(Length::Fill)
             .align_y(if has_trailing {
                 iced::Alignment::Center
@@ -974,20 +985,21 @@ impl App {
 
         let body = row![
             text(self.t("driver_restart_recommended_desc").to_string())
-                .size(theme::text_size::BODY_SMALL)
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .style(warning_container_text_style)
                 .width(Length::Fill),
-            close,
         ]
         .spacing(8)
         .width(Length::Fill)
         .align_y(iced::Alignment::Center);
 
-        self.message_banner(
+        self.message_banner_with_trailing(
             BannerSeverity::Warning,
             icon::banner_warning(),
             self.t("driver_restart_recommended_title").to_string(),
             body,
+            Some(close.into()),
         )
     }
 
@@ -1084,20 +1096,21 @@ impl App {
         // vertical glyph stack.
         let body = row![
             text(self.t(desc_key).to_string())
-                .size(theme::text_size::BODY_SMALL)
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .style(warning_container_text_style)
                 .width(Length::Fill),
-            action,
         ]
         .spacing(12)
         .width(Length::Fill)
         .align_y(iced::Alignment::Center);
 
-        self.message_banner(
+        self.message_banner_with_trailing(
             BannerSeverity::Warning,
             icon::banner_warning(),
             self.t(title_key).to_string(),
             body,
+            can_install.then_some(action),
         )
     }
 
@@ -1155,21 +1168,26 @@ impl App {
                 current = current,
                 latest = latest
             ))
-            .size(theme::text_size::BODY_SMALL)
+            .size(theme::text_size::BODY_MEDIUM)
+            .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
             .style(warning_container_text_style)
             .width(Length::Fill),
-            update_action,
-            dismiss_btn,
         ]
         .spacing(8)
         .width(Length::Fill)
         .align_y(iced::Alignment::Center);
 
-        self.message_banner(
+        self.message_banner_with_trailing(
             BannerSeverity::Warning,
             icon::banner_warning(),
             self.t("driver_update_title").to_string(),
             body,
+            Some(
+                row![update_action, dismiss_btn]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .into(),
+            ),
         )
     }
 

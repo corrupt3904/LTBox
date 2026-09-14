@@ -1666,7 +1666,8 @@ fn finding_panel(
         for issue in issues {
             details = details.push(
                 text(localized_issue(issue, false, app))
-                    .size(11.0)
+                    .size(theme::text_size::BODY_MEDIUM)
+                    .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                     .style(error_container_text_style),
             );
         }

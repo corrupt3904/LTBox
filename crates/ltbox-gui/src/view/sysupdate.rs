@@ -384,15 +384,23 @@ impl App {
             );
         }
         if is_error && let Some(error) = self.operation_error.as_deref() {
-            let summary = concise_error_summary(error, EXEC_ERROR_SUMMARY_MAX_CHARS);
+            let width_budget = ((self.window_size.0 - 300.0).max(80.0)
+                / theme::text_size::BODY_SMALL)
+                .floor() as usize;
+            let summary =
+                concise_error_summary(error, EXEC_ERROR_SUMMARY_MAX_CHARS.min(width_budget));
             if !summary.is_empty() {
                 now_copy = now_copy.push(
-                    text(summary)
-                        .size(theme::text_size::BODY_SMALL)
-                        .style(|t: &Theme| iced::widget::text::Style {
-                            color: Some(pal_of(t).error),
-                        })
-                        .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
+                    container(
+                        text(summary)
+                            .size(theme::text_size::BODY_SMALL)
+                            .style(|t: &Theme| iced::widget::text::Style {
+                                color: Some(pal_of(t).error),
+                            })
+                            .wrapping(iced::widget::text::Wrapping::None),
+                    )
+                    .width(Length::Fill)
+                    .clip(true),
                 );
             }
         }

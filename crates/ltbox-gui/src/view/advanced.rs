@@ -734,7 +734,8 @@ impl App {
             icon::banner_error(),
             self.t("flash_confirm_warning_title").to_string(),
             text(self.t("simple_flash_confirm_warning").to_string())
-                .size(theme::text_size::BODY_SMALL)
+                .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .style(error_container_text_style)
                 .width(Length::Fill)
                 .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
