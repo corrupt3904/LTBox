@@ -24,6 +24,7 @@ static RESPONSE_CACHE: std::sync::LazyLock<Cache<String, Arc<String>>> =
 pub struct GitHubClient {
     owner_repo: String,
     agent: ureq::Agent,
+    bypass_cache: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +47,7 @@ struct Release {
 #[derive(Debug, Clone)]
 pub struct PublishedRelease {
     pub tag: String,
+    pub run_id: Option<u64>,
     pub prerelease: bool,
     pub published_at: String,
 }
@@ -60,6 +62,7 @@ fn recent_releases(mut releases: Vec<Release>) -> Vec<PublishedRelease> {
         .take(5)
         .map(|r| PublishedRelease {
             tag: r.tag_name,
+            run_id: None,
             prerelease: r.prerelease,
             published_at: r.published_at.unwrap_or_default(),
         })
@@ -88,6 +91,7 @@ struct WorkflowRunsResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkflowRun {
     pub id: u64,
+    pub created_at: String,
     pub head_branch: Option<String>,
     pub path: Option<String>,
 }
@@ -102,6 +106,10 @@ pub struct WorkflowArtifact {
     pub name: String,
     #[serde(default)]
     pub digest: Option<String>,
+    #[serde(default)]
+    pub expired: bool,
+    pub created_at: String,
+    pub expires_at: String,
 }
 
 impl GitHubClient {
@@ -110,7 +118,14 @@ impl GitHubClient {
         Ok(Self {
             owner_repo: owner_repo.to_string(),
             agent,
+            bypass_cache: false,
         })
+    }
+
+    /// Fetch fresh metadata for an explicit version-picker query or retry.
+    pub fn without_cache(mut self) -> Self {
+        self.bypass_cache = true;
+        self
     }
 
     /// Parse "github.com/owner/repo" or "owner/repo" into "owner/repo".
@@ -132,7 +147,9 @@ impl GitHubClient {
         // (100ms → 400ms); transport errors and 5xx retry, 4xx short-circuits.
         let url = format!("{API_BASE}/repos/{}{endpoint}", self.owner_repo);
 
-        if let Some(cached) = RESPONSE_CACHE.get(&url) {
+        if !self.bypass_cache
+            && let Some(cached) = RESPONSE_CACHE.get(&url)
+        {
             return serde_json::from_str::<T>(&cached)
                 .map_err(|e| LtboxError::Download(format!("JSON parse error (cached): {e}")));
         }
@@ -143,7 +160,17 @@ impl GitHubClient {
                 let delay_ms = 100u64 * 4u64.pow(attempt - 1);
                 std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             }
-            match self.agent.get(&url).call() {
+            let mut request = self.agent.get(&url);
+            if self.bypass_cache {
+                request = request.header("Cache-Control", "no-cache");
+            }
+            // Optional CI token is sent only to api.github.com, never asset hosts.
+            if let Ok(token) = std::env::var("LTBOX_GITHUB_TOKEN")
+                && !token.is_empty()
+            {
+                request = request.header("Authorization", &format!("Bearer {token}"));
+            }
+            match request.call() {
                 Ok(mut resp) => {
                     // GitHub release + tag JSON payloads we hit are small;
                     // `read_to_string` is bounded by ureq's default body-size
@@ -308,8 +335,13 @@ impl GitHubClient {
     /// Workflow artifacts with the optional digest reported by GitHub.
     pub fn workflow_artifact_details(&self, run_id: u64) -> Result<Vec<WorkflowArtifact>> {
         let resp: ArtifactsResponse =
-            self.get_json(&format!("/actions/runs/{run_id}/artifacts"))?;
-        Ok(resp.artifacts)
+            self.get_json(&format!("/actions/runs/{run_id}/artifacts?per_page=100"))?;
+        let now = chrono::Utc::now();
+        Ok(resp
+            .artifacts
+            .into_iter()
+            .filter(|a| artifact_available(a, now))
+            .collect())
     }
 
     pub fn workflow_run_matches(
@@ -338,6 +370,53 @@ impl GitHubClient {
         Ok(true)
     }
 
+    /// Successful runs less than 90 days old that still have downloadable artifacts.
+    /// A shorter upstream retention period is honored as well.
+    pub fn recent_available_runs(
+        &self,
+        workflow_file: &str,
+        branch: &str,
+    ) -> Result<Vec<PublishedRelease>> {
+        let now = chrono::Utc::now();
+        let mut choices = Vec::new();
+        let mut page = 1;
+        loop {
+            let resp: WorkflowRunsResponse = self.get_json(&format!(
+                "/actions/workflows/{workflow_file}/runs?status=success&per_page=100&page={page}&branch={branch}"
+            ))?;
+            let finished = resp.workflow_runs.len() < 100
+                || resp.workflow_runs.last().is_some_and(|r| {
+                    chrono::DateTime::parse_from_rfc3339(&r.created_at).is_ok_and(|date| {
+                        now.signed_duration_since(date) >= chrono::Duration::days(90)
+                    })
+                });
+            let mut runs = resp.workflow_runs;
+            runs.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+            for run in runs {
+                if !recent_timestamp(&run.created_at, now) {
+                    continue;
+                }
+                if self.workflow_artifact_details(run.id)?.is_empty() {
+                    continue;
+                }
+                choices.push(PublishedRelease {
+                    tag: run.id.to_string(),
+                    run_id: Some(run.id),
+                    prerelease: false,
+                    published_at: run.created_at,
+                });
+                if choices.len() == 5 {
+                    return Ok(choices);
+                }
+            }
+            if finished {
+                break;
+            }
+            page += 1;
+        }
+        Ok(choices)
+    }
+
     pub fn latest_successful_run(
         &self,
         workflow_file: &str,
@@ -353,6 +432,20 @@ impl GitHubClient {
     }
 }
 
+fn recent_timestamp(value: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
+    chrono::DateTime::parse_from_rfc3339(value).is_ok_and(|created| {
+        let age = now.signed_duration_since(created);
+        age >= chrono::Duration::zero() && age < chrono::Duration::days(90)
+    })
+}
+
+fn artifact_available(artifact: &WorkflowArtifact, now: chrono::DateTime<chrono::Utc>) -> bool {
+    !artifact.expired
+        && recent_timestamp(&artifact.created_at, now)
+        && chrono::DateTime::parse_from_rfc3339(&artifact.expires_at)
+            .is_ok_and(|expiry| expiry > now)
+}
+
 fn normalize_workflow_path(path: &str) -> String {
     path.trim_start_matches(".github/workflows/")
         .trim_start_matches(".github/workflows\\")
@@ -362,6 +455,48 @@ fn normalize_workflow_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_retention_metadata_is_an_api_error_not_an_empty_list() {
+        assert!(
+            serde_json::from_str::<WorkflowRunsResponse>(
+                r#"{"workflow_runs":[{"id":34813418845,"head_branch":"main"}]}"#
+            )
+            .is_err()
+        );
+        for dates in [
+            r#""created_at":"2026-09-14T06:25:31Z""#,
+            r#""expires_at":"2026-12-13T06:25:31Z""#,
+        ] {
+            let json = format!(r#"{{"artifacts":[{{"name":"manager",{dates}}}]}}"#);
+            assert!(serde_json::from_str::<ArtifactsResponse>(&json).is_err());
+        }
+    }
+
+    #[test]
+    fn artifact_retention_rejects_90_day_boundary_and_early_expiry() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-14T12:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let mut artifact = WorkflowArtifact {
+            name: "manager".into(),
+            digest: None,
+            expired: false,
+            created_at: (now - chrono::Duration::days(90) + chrono::Duration::seconds(1))
+                .to_rfc3339(),
+            expires_at: (now + chrono::Duration::days(1)).to_rfc3339(),
+        };
+        assert!(artifact_available(&artifact, now));
+        artifact.created_at = (now - chrono::Duration::days(90)).to_rfc3339();
+        assert!(!artifact_available(&artifact, now));
+        artifact.created_at = (now - chrono::Duration::days(1)).to_rfc3339();
+        artifact.expired = true;
+        assert!(!artifact_available(&artifact, now));
+        artifact.expired = false;
+        artifact.expires_at = now.to_rfc3339();
+        assert!(!artifact_available(&artifact, now));
+        assert!(!recent_timestamp("invalid", now));
+    }
 
     #[test]
     fn recent_release_picker_excludes_drafts_and_keeps_latest_five_by_publish_time() {

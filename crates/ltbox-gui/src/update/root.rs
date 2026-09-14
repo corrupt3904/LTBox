@@ -40,6 +40,8 @@ impl App {
                 self.root.version = None;
                 self.root.nightly_source = None;
                 self.root.file_path = None;
+                self.root.ksuinit_path = None;
+                self.root.module_path = None;
                 self.root.kernel_version = None;
                 self.root.run_id = None;
                 self.root.run_id_buffer.clear();
@@ -50,7 +52,15 @@ impl App {
                 self.root.release_request = None;
                 self.root.release_popup_open = false;
                 self.root.provider = Some(p);
+                self.root.run_id = None;
+                self.root.run_id_buffer.clear();
+                if matches!(p, Provider::MagiskForks | Provider::KernelSULocal) {
+                    self.root.version = None;
+                    self.root.nightly_source = None;
+                }
                 self.root.file_path = None;
+                self.root.ksuinit_path = None;
+                self.root.module_path = None;
                 // ReSukiSU has no Stable channel — if the user had Stable
                 // picked before switching to ReSukiSU, force Nightly so the
                 // hidden-Stable version step lands on the sole valid choice
@@ -78,6 +88,8 @@ impl App {
                 }
                 self.root.mode = Some(m);
                 self.root.file_path = None;
+                self.root.ksuinit_path = None;
+                self.root.module_path = None;
                 self.root.kernel_version = None;
                 Task::none()
             }
@@ -102,6 +114,8 @@ impl App {
                 Task::none()
             }
             RootMsg::RootNightlySource(s) => {
+                self.root.release_popup_open = false;
+                self.root.release_request = None;
                 self.root.nightly_source = Some(s);
                 match s {
                     NightlySource::AutoDetect => {
@@ -113,6 +127,29 @@ impl App {
                         // Prefill from any previous commit so re-entry is painless.
                         self.root.run_id_buffer = self.root.run_id.clone().unwrap_or_default();
                         self.root.run_id_popup_open = true;
+                    }
+                }
+                Task::none()
+            }
+            RootMsg::RootSelectKsuPayload(module) => {
+                let spec = if module {
+                    pickers::FilePickSpec::single().with_filter("Kernel module", &["ko"])
+                } else {
+                    pickers::FilePickSpec::single()
+                };
+                pickers::pick_file_for(spec, &self.recent_paths, move |path| {
+                    Message::Root(RootMsg::RootKsuPayloadSelected(module, path))
+                })
+            }
+            RootMsg::RootKsuPayloadSelected(module, path) => {
+                if self.root.provider == Some(Provider::KernelSULocal)
+                    && let Some(path) = path
+                {
+                    self.remember_recent(pickers::PickerKind::File, &path);
+                    if module {
+                        self.root.module_path = Some(path);
+                    } else {
+                        self.root.ksuinit_path = Some(path);
                     }
                 }
                 Task::none()
@@ -145,11 +182,15 @@ impl App {
                 Task::none()
             }
             RootMsg::RootNext => {
-                if self.root.step == 3
-                    && self.root.version == Some(VerChoice::Stable)
-                    && !self.root.is_forks()
+                if (self.root.step == 3 && self.root.version == Some(VerChoice::Stable)
+                    || self.root.step == 4
+                        && self.root.nightly_source == Some(NightlySource::AutoDetect))
+                    && !self.root.is_local()
                     && !self.root.is_gki()
                 {
+                    if self.root.release_request.is_some() {
+                        return Task::none();
+                    }
                     let Some(provider) = self.root.provider else {
                         return Task::none();
                     };
@@ -157,6 +198,7 @@ impl App {
                     let provider = match provider {
                         Provider::Magisk => RootProvider::Magisk,
                         Provider::MagiskForks => RootProvider::MagiskFork,
+                        Provider::KernelSULocal => RootProvider::KernelSULocal,
                         Provider::KernelSU => RootProvider::KernelSU,
                         Provider::KernelSUNext => RootProvider::KernelSUNext,
                         Provider::SukiSU => RootProvider::SukiSU,
@@ -164,6 +206,7 @@ impl App {
                         Provider::APatch => RootProvider::APatch,
                         Provider::FolkPatch => RootProvider::FolkPatch,
                     };
+                    let nightly = self.root.step == 4;
                     let Some(repo) = provider_repo(provider) else {
                         return Task::none();
                     };
@@ -176,7 +219,21 @@ impl App {
                     return task_heavy(
                         move || {
                             ltbox_core::github::GitHubClient::new(repo)
-                                .and_then(|client| client.recent_published_releases())
+                                .and_then(|client| {
+                                    let client = client.without_cache();
+                                    if nightly {
+                                        let (workflow, branch) =
+                                            ltbox_patch::root_pipeline::provider_workflow(provider)
+                                                .ok_or_else(|| {
+                                                    ltbox_core::LtboxError::Config(
+                                                        "No nightly workflow".into(),
+                                                    )
+                                                })?;
+                                        client.recent_available_runs(workflow, branch)
+                                    } else {
+                                        client.recent_published_releases()
+                                    }
+                                })
                                 .map_err(|e| e.to_string())
                         },
                         move |result| Message::Root(RootMsg::RootReleasesLoaded(request, result)),
@@ -273,8 +330,9 @@ impl App {
             }
             RootMsg::RootReleaseConfirm => {
                 if !self.root.release_popup_open
-                    || self.root.step != 3
-                    || self.root.version != Some(VerChoice::Stable)
+                    || !(self.root.step == 3 && self.root.version == Some(VerChoice::Stable)
+                        || self.root.step == 4
+                            && self.root.nightly_source == Some(NightlySource::AutoDetect))
                 {
                     return Task::none();
                 }
@@ -285,7 +343,11 @@ impl App {
                 else {
                     return Task::none();
                 };
-                self.root.release_tag = Some(release.tag.clone());
+                if let Some(run_id) = release.run_id {
+                    self.root.run_id = Some(run_id.to_string());
+                } else {
+                    self.root.release_tag = Some(release.tag.clone());
+                }
                 self.root.release_popup_open = false;
                 self.root.next();
                 if self.root.step == 5
@@ -503,14 +565,32 @@ impl App {
                 {
                     return Task::none();
                 }
-                let phases = self.begin_phased_op(View::Root, OperationPhaseKind::Root);
-                self.error_msg = None;
-                self.root.skroot_root_key = None;
                 let family = self.root.family;
                 let mode = self.root.mode;
                 let provider = self.root.provider;
                 let version = self.root.version;
                 let file_path = self.root.file_path.clone();
+                let local_ksu = if provider == Some(Provider::KernelSULocal) {
+                    match (
+                        &self.root.file_path,
+                        &self.root.ksuinit_path,
+                        &self.root.module_path,
+                    ) {
+                        (Some(apk), Some(init), Some(module)) => {
+                            Some(ltbox_patch::root_pipeline::LocalKsuFiles {
+                                manager_apk: apk.into(),
+                                ksuinit: init.into(),
+                                module: module.into(),
+                            })
+                        }
+                        _ => return Task::none(),
+                    }
+                } else {
+                    None
+                };
+                let phases = self.begin_phased_op(View::Root, OperationPhaseKind::Root);
+                self.error_msg = None;
+                self.root.skroot_root_key = None;
                 let gui_kernel_version = self.root.kernel_version.clone();
                 let device_model = self.device.model.clone();
                 let conn = self.device.connection;
@@ -525,12 +605,7 @@ impl App {
                     .map(std::path::PathBuf::from)
                     .collect();
                 let superkey = self.root.superkey.clone().unwrap_or_default();
-                let nightly_run_id: Option<u64> =
-                    if self.root.nightly_source == Some(NightlySource::ManualInput) {
-                        self.root.run_id.as_deref().and_then(|s| s.parse().ok())
-                    } else {
-                        None
-                    };
+                let nightly_run_id = self.root.run_id.as_deref().and_then(|s| s.parse().ok());
                 let release_tag = self.root.release_tag.clone();
 
                 self.log_push(format!(
@@ -606,6 +681,7 @@ impl App {
                                     provider,
                                     version,
                                     file_path,
+                                    local_ksu,
                                     gui_kernel_version,
                                     device_model,
                                     conn,
@@ -651,6 +727,73 @@ mod tests {
     use crate::*;
 
     #[test]
+    fn nightly_auto_opens_picker_and_pins_selected_run() {
+        let mut app = App {
+            root: RootWizard {
+                step: 4,
+                family: Some(Family::KernelSU),
+                mode: Some(RootMode::Lkm),
+                provider: Some(Provider::SukiSU),
+                version: Some(VerChoice::Nightly),
+                nightly_source: Some(NightlySource::AutoDetect),
+                ..RootWizard::default()
+            },
+            ..App::default()
+        };
+        let _ = app.update_root(RootMsg::RootNext);
+        let request = app.root.release_request.unwrap();
+        assert_eq!(app.root.step, 4);
+        // A transport/API error must remain distinct from a successful empty response.
+        let _ = app.update_root(RootMsg::RootReleasesLoaded(
+            request,
+            Err("GitHub API 503".into()),
+        ));
+        assert_eq!(app.root.release_error.as_deref(), Some("GitHub API 503"));
+        assert!(app.root.release_selection.is_none());
+        let _ = app.update_root(RootMsg::RootReleaseConfirm);
+        assert_eq!(app.root.step, 4);
+        let _ = app.update_root(RootMsg::RootNext);
+        assert!(app.root.release_error.is_none());
+        let retry_request = app.root.release_request.unwrap();
+        let _ = app.update_root(RootMsg::RootNext);
+        assert_eq!(app.root.release_request, Some(retry_request));
+        // An old worker cannot overwrite the retry result.
+        let _ = app.update_root(RootMsg::RootReleasesLoaded(request, Err("stale".into())));
+        assert!(app.root.release_error.is_none());
+        let _ = app.update_root(RootMsg::RootReleasesLoaded(retry_request, Ok(Vec::new())));
+        assert!(app.root.release_error.is_none());
+        let _ = app.update_root(RootMsg::RootReleaseConfirm);
+        assert_eq!(app.root.step, 4);
+        let _ = app.update_root(RootMsg::RootNext);
+        let request = app.root.release_request.unwrap();
+        let _ = app.update_root(RootMsg::RootReleasesLoaded(
+            request,
+            Ok(vec![ltbox_core::github::PublishedRelease {
+                tag: "123".into(),
+                run_id: Some(123),
+                prerelease: false,
+                published_at: "2026-09-14T00:00:00Z".into(),
+            }]),
+        ));
+        let _ = app.update_root(RootMsg::RootReleaseConfirm);
+        assert_eq!(app.root.run_id.as_deref(), Some("123"));
+        assert_eq!(app.root.step, 5);
+        let _ = app.update_root(RootMsg::RootProvider(Provider::KernelSULocal));
+        assert!(app.root.run_id.is_none());
+        assert!(!app.root.needs_ksu_lkm_kernel_version());
+        app.root.step = 3;
+        app.root.file_path = Some("manager.apk".into());
+        assert!(!app.root.can_next());
+        app.root.ksuinit_path = Some("ksuinit".into());
+        app.root.module_path = Some("kernelsu.ko".into());
+        assert!(app.root.can_next());
+        app.root.next();
+        assert_eq!(app.root.step, 5);
+        app.root.back();
+        assert_eq!(app.root.step, 3);
+    }
+
+    #[test]
     fn stable_next_requires_a_published_release_and_pins_the_selection() {
         let mut app = App {
             root: RootWizard {
@@ -673,11 +816,13 @@ mod tests {
             request,
             Ok(vec![
                 ltbox_core::github::PublishedRelease {
+                    run_id: None,
                     tag: "v2.0.0-rc1".into(),
                     prerelease: true,
                     published_at: "2026-09-01T00:00:00Z".into(),
                 },
                 ltbox_core::github::PublishedRelease {
+                    run_id: None,
                     tag: "v1.9.0".into(),
                     prerelease: false,
                     published_at: "2026-08-01T00:00:00Z".into(),

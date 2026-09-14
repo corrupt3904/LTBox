@@ -151,6 +151,7 @@ fn build_fixture_output(
         _ => unreachable!("fixture only covers ramdisk root families"),
     };
     let config = RootPipelineConfig {
+        local_ksu: None,
         family,
         provider,
         version: RootVersion::Stable,

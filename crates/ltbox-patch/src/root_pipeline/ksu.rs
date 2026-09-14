@@ -151,6 +151,16 @@ pub fn stage_root_manager_apk(
         };
     }
 
+    if cfg.provider == RootProvider::KernelSULocal {
+        let local = cfg
+            .local_ksu
+            .as_ref()
+            .ok_or_else(|| LtboxError::Patch("Missing local KernelSU files".into()))?;
+        local.validate()?;
+        copy_apk_to(&local.manager_apk, &manager_apk)?;
+        return Ok(Some(manager_apk));
+    }
+
     match cfg.family {
         RootFamily::Magisk => match (cfg.provider, cfg.version) {
             (RootProvider::MagiskFork, _) => {

@@ -899,6 +899,7 @@ impl Family {
                 Provider::KernelSUNext,
                 Provider::SukiSU,
                 Provider::ReSukiSU,
+                Provider::KernelSULocal,
             ],
             Self::APatch => &[Provider::APatch, Provider::FolkPatch],
             Self::Skroot => &[],
@@ -909,6 +910,7 @@ impl Family {
 enum Provider {
     Magisk,
     MagiskForks,
+    KernelSULocal,
     KernelSU,
     KernelSUNext,
     SukiSU,
@@ -920,7 +922,7 @@ impl Provider {
     fn label_key(&self) -> &'static str {
         match self {
             Self::Magisk => "provider_magisk",
-            Self::MagiskForks => "provider_magisk_forks",
+            Self::MagiskForks | Self::KernelSULocal => "provider_magisk_forks",
             Self::KernelSU => "provider_ksu",
             Self::KernelSUNext => "provider_ksu_next",
             Self::SukiSU => "provider_sukisu",
@@ -933,6 +935,7 @@ impl Provider {
         match self {
             Self::Magisk => Some("provider_magisk_desc"),
             Self::MagiskForks => Some("provider_magisk_forks_desc"),
+            Self::KernelSULocal => Some("provider_ksu_local_desc"),
             Self::KernelSU => Some("provider_ksu_desc"),
             Self::KernelSUNext => Some("provider_ksu_next_desc"),
             Self::SukiSU => Some("provider_sukisu_desc"),

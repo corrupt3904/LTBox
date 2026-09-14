@@ -72,7 +72,7 @@ fn resolve_provider_version(
         return Ok((Provider::Magisk, VerChoice::Stable));
     }
     let provider = provider.ok_or_else(|| tr("err_root_provider_missing"))?;
-    let version = if provider == Provider::MagiskForks {
+    let version = if matches!(provider, Provider::MagiskForks | Provider::KernelSULocal) {
         version.unwrap_or(VerChoice::Stable)
     } else {
         version.ok_or_else(|| tr("err_root_version_missing"))?
@@ -90,6 +90,7 @@ pub(crate) fn root_worker(
     provider: Option<Provider>,
     version: Option<VerChoice>,
     file_path: Option<String>,
+    local_ksu: Option<ltbox_patch::root_pipeline::LocalKsuFiles>,
     gui_kernel_version: Option<String>,
     device_model: String,
     conn: ConnectionStatus,
@@ -106,6 +107,13 @@ pub(crate) fn root_worker(
     if !ltbox_core::model::capabilities(&device_model).root {
         return Err(tr_args!("model_unsupported", model = "TB376FC / TB390FU"));
     }
+    if provider == Some(Provider::KernelSULocal) {
+        local_ksu
+            .as_ref()
+            .ok_or_else(|| tr("err_root_provider_missing"))?
+            .validate()
+            .map_err(|e| tr_args!("err_root_payload_failed", error = e))?;
+    }
     let skip_adb = conn.skip_adb();
 
     // GKI route: AnyKernel3 zip is the full input —
@@ -121,8 +129,8 @@ pub(crate) fn root_worker(
 
     use ltbox_patch::root_pipeline::{
         RootFamily, RootPipelineConfig, RootProvider, RootVersion, build_patched_artifacts,
-        ensure_nightly_run_id, resolve_root_image_target, root_run_rebuilds_vbmeta,
-        stage_root_manager_apk, stage_root_payload,
+        resolve_root_image_target, root_run_rebuilds_vbmeta, stage_root_manager_apk,
+        stage_root_payload,
     };
 
     let pipe_family = match family {
@@ -137,6 +145,7 @@ pub(crate) fn root_worker(
         match provider {
             Provider::Magisk => RootProvider::Magisk,
             Provider::MagiskForks => RootProvider::MagiskFork,
+            Provider::KernelSULocal => RootProvider::KernelSULocal,
             Provider::KernelSU => RootProvider::KernelSU,
             Provider::KernelSUNext => RootProvider::KernelSUNext,
             Provider::SukiSU => RootProvider::SukiSU,
@@ -225,7 +234,7 @@ pub(crate) fn root_worker(
     let mut adb_ready_at_start = false;
     if !skip_adb && let Some(mut adb) = ltbox_device::adb::AdbManager::new_if_connected() {
         adb_ready_at_start = true;
-        if mode == Some(RootMode::Lkm) {
+        if mode == Some(RootMode::Lkm) && local_ksu.is_none() {
             if let Ok(Some(kv)) = adb.get_kernel_version() {
                 let normalized = ltbox_patch::root_pipeline::normalize_ksu_kernel_version(&kv);
                 live!(
@@ -252,11 +261,12 @@ pub(crate) fn root_worker(
             }
         }
     }
-    if mode == Some(RootMode::Lkm) && kernel_version.is_none() {
+    if mode == Some(RootMode::Lkm) && local_ksu.is_none() && kernel_version.is_none() {
         return Err(tr("err_ksu_lkm_kernel_version_required"));
     }
 
-    let mut manager_cfg = RootPipelineConfig {
+    let manager_cfg = RootPipelineConfig {
+        local_ksu,
         family: pipe_family,
         provider: pipe_provider,
         version: pipe_version,
@@ -287,16 +297,19 @@ pub(crate) fn root_worker(
     };
     // Phase 2/8 — Resolve and download root files before EDL.
     live!(log, "[Root] {}", phases.marker(2));
-    // Pin the nightly workflow run ID once so
-    // every fetch in this Phase 2 pulls from
-    // the SAME upstream build. Without this,
-    // a new workflow landing between the
-    // ~minute-long manager APK download and
-    // the .ko/ksuinit fetch would split the
-    // installed manager APK across two
-    // different builds.
-    ensure_nightly_run_id(&mut manager_cfg, &mut log)
-        .map_err(|e| tr_args!("err_root_nightly_run_failed", error = e))?;
+    if pipe_version == RootVersion::Nightly
+        && nightly_run_id.is_none()
+        && !is_gki_route
+        && !matches!(
+            pipe_provider,
+            RootProvider::MagiskFork | RootProvider::KernelSULocal
+        )
+    {
+        return Err(tr_args!(
+            "err_root_nightly_run_failed",
+            error = tr("nightly_manual_invalid")
+        ));
+    }
     let mut manager_apk = stage_root_manager_apk(&manager_cfg, &mut log)
         .map_err(|e| tr_args!("err_root_manager_apk_failed", error = e))?;
     stage_root_payload(&manager_cfg, &mut log)
@@ -785,6 +798,7 @@ mod tests {
             let result = root_worker(
                 None,
                 Some(RootMode::Gki),
+                None,
                 None,
                 None,
                 None,

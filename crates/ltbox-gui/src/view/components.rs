@@ -1283,7 +1283,8 @@ impl Provider {
         // Provider brand logos — kept as bespoke SVG, not Lucide.
         let bytes: &'static [u8] = match self {
             Self::Magisk => include_bytes!("../../assets/icons/magisk.svg"),
-            Self::MagiskForks => include_bytes!("../../assets/icons/magisk_forks.svg"),
+            Self::MagiskForks => include_bytes!("../../assets/icons/local_magisk.svg"),
+            Self::KernelSULocal => include_bytes!("../../assets/icons/local_ksu.svg"),
             Self::KernelSU => include_bytes!("../../assets/icons/kernelsu.svg"),
             Self::KernelSUNext => include_bytes!("../../assets/icons/kernelsu_next.svg"),
             Self::SukiSU => include_bytes!("../../assets/icons/sukisu.svg"),

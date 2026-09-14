@@ -81,6 +81,7 @@ pub enum RootFamily {
 pub enum RootProvider {
     Magisk,
     MagiskFork,
+    KernelSULocal,
     KernelSU,
     KernelSUNext,
     SukiSU,
@@ -164,6 +165,7 @@ pub fn root_run_rebuilds_vbmeta(target: RootImageTarget, device_model: &str) -> 
 /// Root pipeline input from the GUI wizard.
 #[derive(Clone)]
 pub struct RootPipelineConfig {
+    pub local_ksu: Option<LocalKsuFiles>,
     pub family: RootFamily,
     pub provider: RootProvider,
     pub version: RootVersion,
@@ -208,12 +210,56 @@ pub struct RootPipelineConfig {
     pub release_tag: Option<String>,
 }
 
+/// Locally supplied KernelSU-family inputs. They must come from the same build
+/// and the module must match the device kernel; no provider download is used.
+#[derive(Debug, Clone)]
+pub struct LocalKsuFiles {
+    pub manager_apk: PathBuf,
+    pub ksuinit: PathBuf,
+    pub module: PathBuf,
+}
+
+impl LocalKsuFiles {
+    /// Reject incomplete files and wrong ELF architecture/type before staging.
+    pub fn validate(&self) -> Result<()> {
+        use std::io::Read;
+        let mut apk = zip::ZipArchive::new(fs::File::open(&self.manager_apk)?)
+            .map_err(|e| LtboxError::Patch(format!("Manager APK: {e}")))?;
+        apk.by_name("AndroidManifest.xml")
+            .map_err(|e| LtboxError::Patch(format!("Manager APK manifest: {e}")))?;
+        for (path, module) in [(&self.ksuinit, false), (&self.module, true)] {
+            let mut file = fs::File::open(path)?;
+            let mut header = [0u8; 64];
+            file.read_exact(&mut header)?;
+            let kind = u16::from_le_bytes([header[16], header[17]]);
+            if &header[..4] != b"\x7fELF"
+                || header[4] != 2
+                || header[5] != 1
+                || u16::from_le_bytes([header[18], header[19]]) != 183
+                || (module && kind != 1)
+                || (!module && !matches!(kind, 2 | 3))
+            {
+                return Err(LtboxError::Patch(format!(
+                    "Expected an arm64 {}: {}",
+                    if module {
+                        "ELF module"
+                    } else {
+                        "ELF executable"
+                    },
+                    path.display()
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Per-provider `(workflow_file, default_branch)` for nightly runs.
 /// Returns `None` for providers without a nightly channel (e.g. MagiskFork).
-fn provider_workflow(provider: RootProvider) -> Option<(&'static str, &'static str)> {
+pub fn provider_workflow(provider: RootProvider) -> Option<(&'static str, &'static str)> {
     Some(match provider {
         RootProvider::Magisk => ("build.yml", "master"),
-        RootProvider::MagiskFork => return None,
+        RootProvider::MagiskFork | RootProvider::KernelSULocal => return None,
         RootProvider::KernelSU => ("build-manager.yml", "main"),
         RootProvider::KernelSUNext => ("build-manager-ci.yml", "dev"),
         RootProvider::SukiSU => ("build-manager.yml", "main"),
@@ -297,7 +343,10 @@ pub fn ensure_nightly_run_id(cfg: &mut RootPipelineConfig, log: &mut Vec<String>
     if cfg.nightly_run_id.is_some() {
         return Ok(());
     }
-    if matches!(cfg.provider, RootProvider::MagiskFork) {
+    if matches!(
+        cfg.provider,
+        RootProvider::MagiskFork | RootProvider::KernelSULocal
+    ) {
         return Ok(());
     }
     let (_repo, run_id) = resolve_nightly_run(cfg.provider, None, log)?;
@@ -319,7 +368,7 @@ pub(super) fn nightly_artifact_url(repo: &str, run_id: u64, artifact_name: &str)
 pub fn provider_repo(provider: RootProvider) -> Option<&'static str> {
     Some(match provider {
         RootProvider::Magisk => "topjohnwu/Magisk",
-        RootProvider::MagiskFork => return None,
+        RootProvider::MagiskFork | RootProvider::KernelSULocal => return None,
         RootProvider::KernelSU => "tiann/KernelSU",
         // Upstream moved to the KernelSU-Next org; the old `rifsxd/KernelSU-Next`
         // redirects but its release assets aren't mirrored, so pin the new slug.
@@ -391,6 +440,24 @@ pub fn stage_root_payload(cfg: &RootPipelineConfig, log: &mut Vec<String>) -> Re
             crate::magisk::extract_apk_payload(&apk_path, &cfg.work_dir)?;
         }
         RootFamily::KernelSU => {
+            if cfg.provider == RootProvider::KernelSULocal {
+                let staged = LocalKsuFiles {
+                    manager_apk: cfg.work_dir.join("manager.apk"),
+                    ksuinit: cfg.work_dir.join("init"),
+                    module: cfg.work_dir.join("kernelsu.ko"),
+                };
+                if staged.ksuinit.is_file() && staged.module.is_file() {
+                    return staged.validate();
+                }
+                let local = cfg
+                    .local_ksu
+                    .as_ref()
+                    .ok_or_else(|| LtboxError::Patch("Missing local KernelSU files".into()))?;
+                local.validate()?;
+                fs::copy(&local.ksuinit, cfg.work_dir.join("init"))?;
+                fs::copy(&local.module, cfg.work_dir.join("kernelsu.ko"))?;
+                return Ok(());
+            }
             // Skip if both files already on disk from a prior call.
             let ko = cfg.work_dir.join("kernelsu.ko");
             let init = cfg.work_dir.join("init");
@@ -739,6 +806,77 @@ pub fn build_patched_artifacts(
 #[cfg(test)]
 mod root_target_tests {
     use super::*;
+
+    fn input_config(work: &std::path::Path) -> RootPipelineConfig {
+        RootPipelineConfig {
+            local_ksu: None,
+            family: RootFamily::KernelSU,
+            provider: RootProvider::KernelSULocal,
+            version: RootVersion::Stable,
+            root_image_target: RootImageTarget::Boot,
+            rebuild_vbmeta: false,
+            work_dir: work.into(),
+            output_dir: work.join("out"),
+            loader: PathBuf::new(),
+            slot_suffix: "_a".into(),
+            preinit_device: String::new(),
+            gki_kernel_zip: None,
+            kernel_version: None,
+            kernel_gki_branch: None,
+            gki_mode: false,
+            kpm_paths: Vec::new(),
+            superkey: String::new(),
+            magisk_forks_apk: None,
+            nightly_run_id: None,
+            release_tag: None,
+        }
+    }
+
+    #[test]
+    fn local_ksu_stages_all_three_inputs_without_provider_or_kernel_lookup() {
+        use std::io::Write;
+        let temp = tempfile::tempdir().unwrap();
+        let apk = temp.path().join("local.apk");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&apk).unwrap());
+        archive
+            .start_file(
+                "AndroidManifest.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        archive.write_all(b"manifest").unwrap();
+        archive.finish().unwrap();
+        let elf = |kind: u16| {
+            let mut bytes = vec![0; 64];
+            bytes[..4].copy_from_slice(b"\x7fELF");
+            bytes[4] = 2;
+            bytes[5] = 1;
+            bytes[16..18].copy_from_slice(&kind.to_le_bytes());
+            bytes[18] = 183;
+            bytes
+        };
+        let init = temp.path().join("ksuinit");
+        let module = temp.path().join("kernelsu.ko");
+        fs::write(&init, elf(3)).unwrap();
+        fs::write(&module, elf(1)).unwrap();
+        let mut cfg = input_config(&temp.path().join("stage"));
+        cfg.local_ksu = Some(LocalKsuFiles {
+            manager_apk: apk,
+            ksuinit: init,
+            module: module.clone(),
+        });
+        stage_root_manager_apk(&cfg, &mut Vec::new()).unwrap();
+        stage_root_payload(&cfg, &mut Vec::new()).unwrap();
+        assert_eq!(fs::read(cfg.work_dir.join("init")).unwrap(), elf(3));
+        assert_eq!(fs::read(cfg.work_dir.join("kernelsu.ko")).unwrap(), elf(1));
+        fs::write(&module, elf(3)).unwrap();
+        assert!(cfg.local_ksu.as_ref().unwrap().validate().is_err());
+        fs::remove_file(&module).unwrap();
+        // A second offline patch pass uses the validated staged snapshot.
+        stage_root_payload(&cfg, &mut Vec::new()).unwrap();
+        cfg.work_dir = temp.path().join("fresh");
+        assert!(stage_root_payload(&cfg, &mut Vec::new()).is_err());
+    }
 
     #[test]
     fn root_target_matrix_routes_tb320fc_families_to_boot() {

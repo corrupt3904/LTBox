@@ -34,7 +34,9 @@ pub(crate) struct RootWizard {
     pub(crate) release_selection: Option<usize>,
     pub(crate) release_error: Option<String>,
     pub(crate) nightly_source: Option<NightlySource>,
-    pub(crate) file_path: Option<String>, // GKI zip, MagiskForks APK, or manual nightly
+    pub(crate) ksuinit_path: Option<String>,
+    pub(crate) module_path: Option<String>,
+    pub(crate) file_path: Option<String>, // GKI image/ZIP or local manager APK
     pub(crate) folder_path: Option<String>, // Firmware folder (loader + optional testkey)
     /// APatch: `.kpm` modules to embed. Multi-select + per-entry remove.
     pub(crate) kpm_paths: Vec<String>,
@@ -49,8 +51,7 @@ pub(crate) struct RootWizard {
     /// first-entry stage; `Some(v)` → on the verification stage and
     /// `superkey_buffer` will be compared against `v` on Confirm.
     pub(crate) superkey_first_entry: Option<String>,
-    /// Nightly ManualInput: committed workflow run ID (1..=12 digits).
-    /// Only meaningful when `nightly_source == Some(ManualInput)`.
+    /// Committed nightly run ID from the build picker or manual entry.
     pub(crate) run_id: Option<String>,
     pub(crate) run_id_popup_open: bool,
     pub(crate) run_id_buffer: String,
@@ -160,8 +161,11 @@ impl RootWizard {
     pub(crate) fn is_gki(&self) -> bool {
         self.mode == Some(RootMode::Gki)
     }
-    pub(crate) fn is_forks(&self) -> bool {
-        self.provider == Some(Provider::MagiskForks)
+    pub(crate) fn is_local(&self) -> bool {
+        matches!(
+            self.provider,
+            Some(Provider::MagiskForks | Provider::KernelSULocal)
+        )
     }
     pub(crate) fn is_nightly(&self) -> bool {
         self.version == Some(VerChoice::Nightly)
@@ -178,7 +182,7 @@ impl RootWizard {
     }
 
     pub(crate) fn needs_ksu_lkm_kernel_version(&self) -> bool {
-        self.is_ksu_lkm() && self.kernel_version.is_none()
+        self.is_ksu_lkm() && !self.is_local() && self.kernel_version.is_none()
     }
 
     pub(crate) fn active_steps(&self) -> &'static [&'static str] {
@@ -189,7 +193,18 @@ impl RootWizard {
             return ROOT_STEPS_GKI;
         }
         let has_modes = self.family.map(|f| f.has_modes()).unwrap_or(false);
-        if self.is_forks() {
+        if self.provider == Some(Provider::KernelSULocal) {
+            return &[
+                "root_step_type",
+                "root_step_mode",
+                "root_step_provider",
+                "root_step_files",
+                "edl_loader_label",
+                "root_step_confirm",
+                "root_step_flash",
+            ];
+        }
+        if self.is_local() {
             return ROOT_STEPS_FORKS;
         }
         if self.is_apatch() {
@@ -236,7 +251,14 @@ impl RootWizard {
                 _ => self.step,
             };
         }
-        if self.is_forks() {
+        if self.provider == Some(Provider::KernelSULocal) {
+            return if self.step >= 5 {
+                self.step - 1
+            } else {
+                self.step
+            };
+        }
+        if self.is_local() {
             // 0,2,3,5,6,7 → 0..5
             return match self.step {
                 0 => 0,
@@ -339,7 +361,7 @@ impl RootWizard {
                 self.step = 3;
             }
             3 => {
-                if self.is_forks() {
+                if self.is_local() {
                     self.step = 5;
                     return;
                 }
@@ -392,7 +414,7 @@ impl RootWizard {
                     self.step = 2;
                     return;
                 }
-                if self.is_forks() {
+                if self.is_local() {
                     self.step = 3;
                     return;
                 }
@@ -432,8 +454,10 @@ impl RootWizard {
                 }
             }
             3 => {
-                if self.is_forks() {
+                if self.is_local() {
                     self.file_path.is_some()
+                        && (self.provider != Some(Provider::KernelSULocal)
+                            || self.ksuinit_path.is_some() && self.module_path.is_some())
                 } else {
                     self.version.is_some()
                 }

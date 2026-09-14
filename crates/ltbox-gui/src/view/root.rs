@@ -46,8 +46,14 @@ impl App {
                 }
             }
             3 => {
-                if self.root.is_forks() {
-                    self.root_file_step(self.t("root_apk_subtitle"))
+                if self.root.is_local() {
+                    self.root_file_step(self.t(
+                        if self.root.provider == Some(Provider::KernelSULocal) {
+                            "root_ksu_apk_subtitle"
+                        } else {
+                            "root_apk_subtitle"
+                        },
+                    ))
                 } else {
                     self.root_version_step()
                 }
@@ -62,7 +68,7 @@ impl App {
         let is_selection_step = match self.root.step {
             0 | 1 | 4 => true,
             2 => !self.root.is_gki(),
-            3 => !self.root.is_forks(),
+            3 => !self.root.is_local(),
             _ => false,
         };
         let body = if is_exec || is_selection_step {
@@ -125,7 +131,15 @@ impl App {
                     None,
                 )
             }
-            3 if self.root.is_forks() => (self.t("root_apk_title").to_string(), None),
+            3 if self.root.is_local() => (
+                self.t(if self.root.provider == Some(Provider::KernelSULocal) {
+                    "root_step_files"
+                } else {
+                    "root_apk_title"
+                })
+                .to_string(),
+                None,
+            ),
             3 => (self.t("root_version_title").to_string(), None),
             4 => (self.t("root_source_title").to_string(), None),
             5 => (self.t("edl_loader_title").to_string(), None),
@@ -346,12 +360,20 @@ impl App {
 
     pub(crate) fn root_release_popup(&self) -> Element<'_, Message> {
         let header = column![
-            text(self.t("root_release_title"))
-                .size(theme::text_size::TITLE_LARGE)
-                .style(on_surface_style),
-            text(self.t("root_release_subtitle"))
-                .size(theme::text_size::BODY_SMALL)
-                .style(muted_style),
+            text(self.t(if self.root.step == 4 {
+                "root_build_title"
+            } else {
+                "root_release_title"
+            }))
+            .size(theme::text_size::TITLE_LARGE)
+            .style(on_surface_style),
+            text(self.t(if self.root.step == 4 {
+                "root_nightly_subtitle"
+            } else {
+                "root_release_subtitle"
+            }))
+            .size(theme::text_size::BODY_SMALL)
+            .style(muted_style),
         ]
         .spacing(6)
         .into();
@@ -378,7 +400,9 @@ impl App {
                 let label = format!(
                     "{} · {} · {}",
                     release.tag,
-                    self.t(if release.prerelease {
+                    self.t(if release.run_id.is_some() {
+                        "verchoice_nightly"
+                    } else if release.prerelease {
                         "root_release_prerelease"
                     } else {
                         "root_release_stable"
@@ -429,7 +453,12 @@ impl App {
         if self.root.release_request.is_none() && self.root.release_selection.is_some() {
             confirm = confirm.on_press(Message::Root(RootMsg::RootReleaseConfirm));
         }
+        let mut retry = m3_outlined_button(self.t("btn_retry").to_string());
+        if self.root.release_request.is_none() {
+            retry = retry.on_press(Message::Root(RootMsg::RootNext));
+        }
         let footer = row![
+            retry,
             Space::new().width(Length::Fill),
             m3_outlined_button(self.t("btn_cancel").to_string())
                 .on_press(Message::Root(RootMsg::RootReleaseCancel)),
@@ -639,29 +668,49 @@ impl App {
         } else {
             &["apk"]
         };
-        scrollable(
-            column![
-                self.wizard_picker_row(
-                    self.root.file_path.as_deref(),
-                    PickerPathKind::File,
-                    Some(Message::Root(RootMsg::RootSelectFile)),
-                    None
-                ),
-                text(subtitle.to_string())
+        let mut content = column![
+            self.wizard_picker_row(
+                self.root.file_path.as_deref(),
+                PickerPathKind::File,
+                Some(Message::Root(RootMsg::RootSelectFile)),
+                None
+            ),
+            text(subtitle.to_string())
+                .size(theme::text_size::BODY_SMALL)
+                .style(muted_style),
+        ]
+        .spacing(6)
+        .padding(28)
+        .width(Length::Fill);
+        if self.root.provider == Some(Provider::KernelSULocal) {
+            for (label, path, module) in [
+                ("ksuinit", &self.root.ksuinit_path, false),
+                ("kernelsu.ko", &self.root.module_path, true),
+            ] {
+                content = content
+                    .push(text(label).size(theme::text_size::BODY_MEDIUM))
+                    .push(self.wizard_picker_row(
+                        path.as_deref(),
+                        PickerPathKind::File,
+                        Some(Message::Root(RootMsg::RootSelectKsuPayload(module))),
+                        None,
+                    ));
+            }
+        }
+        if self.root.provider == Some(Provider::KernelSULocal) {
+            content = content.push(
+                text(self.t("root_ksu_module_hint"))
                     .size(theme::text_size::BODY_SMALL)
                     .style(muted_style),
-                self.recent_file_chips(
-                    accepted,
-                    |p| Message::RecentFilePicked(PickerTarget::RootFile, p),
-                    "picker_recents"
-                ),
-            ]
-            .spacing(6)
-            .padding(28)
-            .width(Length::Fill),
-        )
-        .height(Length::Fill)
-        .into()
+            );
+        } else {
+            content = content.push(self.recent_file_chips(
+                accepted,
+                |p| Message::RecentFilePicked(PickerTarget::RootFile, p),
+                "picker_recents",
+            ));
+        }
+        scrollable(content).height(Length::Fill).into()
     }
 
     pub(crate) fn root_folder_step(&self) -> Element<'_, Message> {
@@ -939,13 +988,23 @@ impl App {
         if self.root.is_gki() {
             let path = self.root.file_path.clone().unwrap_or_else(|| dash.clone());
             trailing_rows.push(confirm_path_row(self.t("root_step_kernel"), &path));
-        } else if self.root.is_forks() {
+        } else if self.root.is_local() {
             let path = self.root.file_path.clone().unwrap_or_else(|| dash.clone());
             grid_rows.push(confirm_definition_row(
                 self.t("root_step_provider"),
                 self.t("provider_magisk_forks"),
             ));
             trailing_rows.push(confirm_path_row(self.t("root_step_apk"), &path));
+            if self.root.provider == Some(Provider::KernelSULocal) {
+                trailing_rows.push(confirm_path_row(
+                    "ksuinit",
+                    self.root.ksuinit_path.as_deref().unwrap_or("—"),
+                ));
+                trailing_rows.push(confirm_path_row(
+                    "kernelsu.ko",
+                    self.root.module_path.as_deref().unwrap_or("—"),
+                ));
+            }
         } else if !self.root.is_skroot() {
             let prov = self
                 .root
@@ -966,7 +1025,7 @@ impl App {
                     .map(|s| self.t(s.label_key()).to_string())
                     .unwrap_or_else(|| dash.clone());
                 grid_rows.push(confirm_definition_row(self.t("root_step_source"), &src));
-                if self.root.nightly_source == Some(NightlySource::ManualInput) {
+                if self.root.run_id.is_some() {
                     let id = self.root.run_id.clone().unwrap_or_else(|| dash.clone());
                     grid_rows.push(confirm_definition_row(self.t("nightly_run_id_label"), &id));
                 }

@@ -294,6 +294,8 @@ pub(crate) enum RootMsg {
     RootReleaseCancel,
     RootNightlySource(NightlySource),
     RootSelectFile,
+    RootSelectKsuPayload(bool),
+    RootKsuPayloadSelected(bool, Option<String>),
     /// Open the EDL loader picker for the root pipeline. Named for the
     /// step, which predates the field it fills.
     RootSelectFolder,

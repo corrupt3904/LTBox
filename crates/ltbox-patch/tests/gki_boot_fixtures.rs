@@ -34,6 +34,7 @@ fn gbl_gki_pipeline_matches_reference_image() {
     std::fs::copy(stock, work.join("boot.img")).unwrap();
     std::fs::copy(abl, work.join("abl.img")).unwrap();
     let config = RootPipelineConfig {
+        local_ksu: None,
         family: RootFamily::KernelSU,
         provider: RootProvider::KernelSU,
         version: RootVersion::Stable,
@@ -79,6 +80,7 @@ fn skip_avb_rejects_missing_empty_and_unrecognized_abl_before_patching() {
             std::fs::write(work.join("abl.img"), contents).unwrap();
         }
         let config = RootPipelineConfig {
+            local_ksu: None,
             family: RootFamily::KernelSU,
             provider: RootProvider::KernelSU,
             version: RootVersion::Stable,
