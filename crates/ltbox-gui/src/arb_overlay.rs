@@ -814,6 +814,66 @@ mod provisioning_tests {
 mod abl_preparation_tests {
     use super::*;
 
+    /// Weekly download-only verification for every pinned efisp GBL variant.
+    /// The production suffix selector and hash verifier are used, but staged
+    /// files live only in `tempfile`; no EDL session or provisioning call is
+    /// made.
+    #[test]
+    #[ignore = "weekly_fetch: downloads and hashes pinned efisp GBL variants"]
+    fn weekly_fetch_efisp_gbl_variants() {
+        let mut failures = Vec::new();
+        let client = match ltbox_core::github::GitHubClient::from_url(
+            "github.com/miner7222/gbl_root_baldur",
+        ) {
+            Ok(client) => client,
+            Err(error) => {
+                failures.push(format!("create GitHub client: {error}"));
+                assert!(
+                    failures.is_empty(),
+                    "weekly efisp fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+        };
+        let assets = match client.release_by_tag(EFISP_GBL_RELEASE_TAG) {
+            Ok(assets) => assets,
+            Err(error) => {
+                failures.push(format!("load {EFISP_GBL_RELEASE_TAG} assets: {error}"));
+                assert!(
+                    failures.is_empty(),
+                    "weekly efisp fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+        };
+        for suffix in ["_prc.efi", "_prc_arb.efi", "_row.efi", "_row_arb.efi"] {
+            let result = (|| -> std::result::Result<(), String> {
+                let asset_name = efisp_expected_asset(suffix)
+                    .ok_or_else(|| "production efisp selector returned no asset".to_string())?;
+                let asset_url = assets
+                    .iter()
+                    .find(|(name, _)| name == asset_name)
+                    .map(|(_, url)| url)
+                    .ok_or_else(|| format!("release lacks {asset_name}"))?;
+                let temp = tempfile::tempdir().map_err(|error| error.to_string())?;
+                let path = temp.path().join(asset_name);
+                ltbox_core::downloader::download_to_file(asset_url, &path, &mut Vec::new())
+                    .map_err(|error| error.to_string())?;
+                verify_efisp_asset(&path, asset_name)
+            })();
+            if let Err(error) = result {
+                failures.push(format!("{suffix}: {error}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "weekly efisp fetch failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
     #[test]
     fn rejected_abl_prevents_efisp_read_and_fetch() {
         for slot in ["_a", "_b"] {

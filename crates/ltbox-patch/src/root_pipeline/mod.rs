@@ -879,6 +879,103 @@ mod root_target_tests {
     }
 
     #[test]
+    #[ignore = "weekly live download contract; no devices or downloaded code executed"]
+    fn weekly_fetch_root_providers() {
+        let filter = std::env::var("LTBOX_CHECK_PROVIDER").unwrap_or_default();
+        let providers = [
+            (RootProvider::Magisk, RootFamily::Magisk),
+            (RootProvider::KernelSU, RootFamily::KernelSU),
+            (RootProvider::KernelSUNext, RootFamily::KernelSU),
+            (RootProvider::SukiSU, RootFamily::KernelSU),
+            (RootProvider::ReSukiSU, RootFamily::KernelSU),
+            (RootProvider::APatch, RootFamily::APatch),
+            (RootProvider::FolkPatch, RootFamily::APatch),
+            (RootProvider::Skroot, RootFamily::Skroot),
+        ];
+        let mut failures = Vec::new();
+        let mut checked = 0;
+        for (provider, family) in providers {
+            if !filter.is_empty() && filter != format!("{provider:?}") {
+                continue;
+            }
+            for version in [RootVersion::Stable, RootVersion::Nightly] {
+                if provider == RootProvider::ReSukiSU && version == RootVersion::Stable
+                    || provider == RootProvider::Skroot && version == RootVersion::Nightly
+                {
+                    continue;
+                }
+                checked += 1;
+                let label = format!("{provider:?}/{version:?}");
+                let temp = tempfile::tempdir().unwrap();
+                let mut cfg = input_config(temp.path());
+                cfg.provider = provider;
+                cfg.family = family;
+                cfg.version = version;
+                let result = (|| -> Result<()> {
+                    if version == RootVersion::Nightly {
+                        let (workflow, branch) = provider_workflow(provider).unwrap();
+                        cfg.nightly_run_id = GitHubClient::new(provider_repo(provider).unwrap())?
+                            .recent_available_runs(workflow, branch)?
+                            .first()
+                            .and_then(|r| r.run_id);
+                        if cfg.nightly_run_id.is_none() {
+                            return Err(LtboxError::Download(
+                                "No available nightly builds under 90 days".into(),
+                            ));
+                        }
+                    }
+                    let manager = stage_root_manager_apk(&cfg, &mut Vec::new())?.unwrap();
+                    let mut apk = zip::ZipArchive::new(fs::File::open(&manager)?)
+                        .map_err(|e| LtboxError::Patch(e.to_string()))?;
+                    apk.by_name("AndroidManifest.xml")
+                        .map_err(|e| LtboxError::Patch(e.to_string()))?;
+                    if family == RootFamily::KernelSU {
+                        for (kernel, branch) in [
+                            ("5.10", "android12"),
+                            ("5.15", "android13"),
+                            ("6.1", "android14"),
+                            ("6.6", "android15"),
+                        ] {
+                            let mut kernel_cfg = cfg.clone();
+                            kernel_cfg.work_dir = temp.path().join(kernel);
+                            kernel_cfg.kernel_version = Some(kernel.into());
+                            kernel_cfg.kernel_gki_branch = Some(branch.into());
+                            if let Err(error) = stage_root_payload(&kernel_cfg, &mut Vec::new()) {
+                                failures.push(format!("{label}/{branch}-{kernel}: {error}"));
+                            } else {
+                                let inputs = LocalKsuFiles {
+                                    manager_apk: manager.clone(),
+                                    ksuinit: kernel_cfg.work_dir.join("init"),
+                                    module: kernel_cfg.work_dir.join("kernelsu.ko"),
+                                };
+                                match inputs.validate() {
+                                    Ok(()) => eprintln!("PASS {label}/{branch}-{kernel}"),
+                                    Err(error) => failures.push(format!(
+                                        "{label}/{branch}-{kernel} payload validation: {error}"
+                                    )),
+                                }
+                            }
+                        }
+                    } else {
+                        stage_root_payload(&cfg, &mut Vec::new())?;
+                    }
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) => eprintln!("PASS {label} manager/payload"),
+                    Err(error) => failures.push(format!("{label}: {error}")),
+                }
+            }
+        }
+        assert!(checked > 0, "Unknown provider filter: {filter}");
+        assert!(
+            failures.is_empty(),
+            "Download contracts failed:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    #[test]
     fn root_target_matrix_routes_tb320fc_families_to_boot() {
         for model in ["TB320FC", "LAVIETab9QHD1"] {
             assert_eq!(

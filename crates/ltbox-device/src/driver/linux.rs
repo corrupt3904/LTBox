@@ -755,6 +755,47 @@ fn which_program(name: &str) -> Option<std::path::PathBuf> {
 mod tests {
     use super::*;
 
+    /// Weekly network smoke test for the selected QUD archive.  The archive is
+    /// only downloaded to a temporary directory and opened as a zip; it is
+    /// never extracted, installed, or passed to a privileged command.
+    #[test]
+    #[ignore = "weekly_fetch: downloads the published Qualcomm Linux archive"]
+    fn weekly_fetch_linux_kernel_archive_contains_deb() {
+        let mut failures = Vec::new();
+        let result = (|| -> std::result::Result<(), String> {
+            let (_tag, asset) =
+                fetch_latest_linux_kernel_release().map_err(|error| error.to_string())?;
+            let temp = tempfile::tempdir().map_err(|error| error.to_string())?;
+            let archive_path = temp.path().join(&asset.name);
+            ltbox_core::downloader::download_to_file(
+                &asset.browser_download_url,
+                &archive_path,
+                &mut Vec::new(),
+            )
+            .map_err(|error| error.to_string())?;
+            let file = std::fs::File::open(&archive_path).map_err(|error| error.to_string())?;
+            let mut archive = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
+            let has_deb = (0..archive.len()).any(|index| {
+                archive
+                    .by_index(index)
+                    .ok()
+                    .is_some_and(|entry| entry.name().ends_with(".deb"))
+            });
+            if !has_deb {
+                return Err("selected QUD zip contains no .deb package".to_string());
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            failures.push(error);
+        }
+        assert!(
+            failures.is_empty(),
+            "weekly Linux driver fetch failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
     #[test]
     fn select_latest_linux_kernel_release_ignores_drafts_and_prereleases() {
         let releases = vec![

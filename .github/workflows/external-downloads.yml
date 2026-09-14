@@ -1,0 +1,83 @@
+name: External download contracts
+
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: external-download-contracts
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+  LTBOX_GITHUB_TOKEN: ${{ github.token }}
+
+jobs:
+  root:
+    name: Root / ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [Magisk, KernelSU, KernelSUNext, SukiSU, ReSukiSU, APatch, FolkPatch, Skroot]
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: download-root
+      - name: Fetch and unpack stable and available nightly payloads
+        env:
+          LTBOX_CHECK_PROVIDER: ${{ matrix.provider }}
+        run: |
+          set -o pipefail
+          cargo test -p ltbox-patch --locked weekly_fetch_root_providers -- --ignored --nocapture 2>&1 | tee download-check.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: download-root-${{ matrix.provider }}
+          path: download-check.log
+          retention-days: 30
+
+  other-downloads:
+    name: Drivers and application assets / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025-vs2026, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libusb-1.0-0-dev libudev-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: download-nonroot
+      - name: Fetch drivers without installing
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p ltbox-device --locked weekly_fetch -- --ignored --nocapture 2>&1 | tee driver-check.log
+      - name: Fetch application and GBL assets without installing
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p ltbox-gui --locked weekly_fetch -- --ignored --nocapture 2>&1 | tee app-check.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: download-other-${{ matrix.os }}
+          path: '*-check.log'
+          retention-days: 30

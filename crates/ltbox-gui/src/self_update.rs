@@ -830,6 +830,110 @@ mod tests {
     use super::*;
     use std::collections::{HashSet, VecDeque};
 
+    /// Weekly download-only verification of every published direct-update
+    /// target.  This intentionally bypasses the updater entrypoint: files
+    /// remain under `tempfile` and no installed program is replaced or run.
+    #[test]
+    #[ignore = "weekly_fetch: downloads and hashes every published self-update target"]
+    fn weekly_fetch_self_update_archives_and_checksums() {
+        let mut failures = Vec::new();
+        let client = match ltbox_core::github::GitHubClient::new(crate::UPDATE_REPO) {
+            Ok(client) => client,
+            Err(error) => {
+                failures.push(format!("create GitHub client: {error}"));
+                assert!(
+                    failures.is_empty(),
+                    "weekly self-update fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+        };
+        let release = match client.latest_stable_release() {
+            Ok(Some(release)) => release,
+            Ok(None) => {
+                failures.push("no stable LTBox release is published".to_string());
+                assert!(
+                    failures.is_empty(),
+                    "weekly self-update fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+            Err(error) => {
+                failures.push(format!("select stable release: {error}"));
+                assert!(
+                    failures.is_empty(),
+                    "weekly self-update fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+        };
+        let assets = match client.release_by_tag(&release.tag) {
+            Ok(assets) => assets,
+            Err(error) => {
+                failures.push(format!("load {} assets: {error}", release.tag));
+                assert!(
+                    failures.is_empty(),
+                    "weekly self-update fetch failures:\n{}",
+                    failures.join("\n")
+                );
+                return;
+            }
+        };
+
+        for (os, arch) in [
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("macos", "x86_64"),
+            ("macos", "aarch64"),
+        ] {
+            let result = (|| -> std::result::Result<(), String> {
+                let asset = release_asset_for_target(&release.tag, os, arch)
+                    .ok_or_else(|| "production target selector returned no asset".to_string())?;
+                let archive_url = assets
+                    .iter()
+                    .find(|(name, _)| name == &asset.archive_name)
+                    .map(|(_, url)| url)
+                    .ok_or_else(|| format!("release lacks {}", asset.archive_name))?;
+                let checksum_url = assets
+                    .iter()
+                    .find(|(name, _)| name == &asset.checksum_name)
+                    .map(|(_, url)| url)
+                    .ok_or_else(|| format!("release lacks {}", asset.checksum_name))?;
+                let temp = tempfile::tempdir().map_err(|error| error.to_string())?;
+                let archive_path = temp.path().join("archive");
+                let checksum_path = temp.path().join("archive.sha256");
+                let mut log = Vec::new();
+                ltbox_core::downloader::download_to_file(archive_url, &archive_path, &mut log)
+                    .map_err(|error| error.to_string())?;
+                ltbox_core::downloader::download_to_file(checksum_url, &checksum_path, &mut log)
+                    .map_err(|error| error.to_string())?;
+                let expected = parse_sha256_sidecar(
+                    &fs::read_to_string(&checksum_path).map_err(|error| error.to_string())?,
+                )?;
+                let actual = sha256_hex_file(&archive_path).map_err(|error| error.to_string())?;
+                if actual != expected {
+                    return Err(format!(
+                        "SHA-256 mismatch: expected {expected}, downloaded {actual}"
+                    ));
+                }
+                Ok(())
+            })();
+            if let Err(error) = result {
+                failures.push(format!("{os}/{arch}: {error}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "weekly self-update fetch failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
     #[test]
     fn asset_selection_covers_every_published_target() {
         for (os, arch, expected) in [

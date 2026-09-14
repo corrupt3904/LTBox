@@ -752,6 +752,61 @@ fn cleanup(dir: &Path) {
 mod tests {
     use super::*;
 
+    /// Weekly network smoke test for every installer LTBox may select.  It is
+    /// deliberately ignored: CI enables it with `weekly_fetch`.  Downloaded
+    /// installers stay in `tempfile` and are never started or inspected as an
+    /// installer, so this test cannot touch the driver store or hardware.
+    #[test]
+    #[ignore = "weekly_fetch: downloads published Qualcomm Windows installers"]
+    fn weekly_fetch_windows_driver_installers_all_arches() {
+        let mut failures = Vec::new();
+        for spec in [USERSPACE_SPEC, KERNEL_SPEC] {
+            for asset_name in [spec.asset_x64, spec.asset_arm64, spec.asset_x86] {
+                let result = (|| -> std::result::Result<(), String> {
+                    let releases: Vec<GithubRelease> = ltbox_core::downloader::build_agent()
+                        .get(spec.releases_api)
+                        .call()
+                        .map_err(|error| error.to_string())?
+                        .body_mut()
+                        .read_json()
+                        .map_err(|error| error.to_string())?;
+                    let release =
+                        select_latest_win_release(releases, asset_name).ok_or_else(|| {
+                            "production release selector found no matching asset".to_string()
+                        })?;
+                    let url = release
+                        .assets
+                        .iter()
+                        .find(|asset| asset.name.eq_ignore_ascii_case(asset_name))
+                        .map(|asset| asset.browser_download_url.as_str())
+                        .ok_or_else(|| {
+                            "selected release omitted its matching asset URL".to_string()
+                        })?;
+                    let temp = tempfile::tempdir().map_err(|error| error.to_string())?;
+                    let path = temp.path().join(asset_name);
+                    ltbox_core::downloader::download_to_file(url, &path, &mut Vec::new())
+                        .map_err(|error| error.to_string())?;
+                    if std::fs::metadata(&path)
+                        .map_err(|error| error.to_string())?
+                        .len()
+                        == 0
+                    {
+                        return Err("downloaded installer is empty".to_string());
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = result {
+                    failures.push(format!("{asset_name}: {error}"));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "weekly Windows driver fetch failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
     /// `Missing(...)` must never carry an empty vec — empty list
     /// would make the GUI banner say "missing nothing" which is
     /// confusing.
