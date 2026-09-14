@@ -186,11 +186,10 @@ fn run_one(exe: &Path, boot_img: &Path, index: usize) {
 }
 
 #[test]
+#[ignore = "requires SKROOT_PARITY_BOOTS and SKROOT_PARITY_EXE"]
 fn skroot_lite_matches_upstream_patcher() {
-    let Ok(boots) = env::var("SKROOT_PARITY_BOOTS") else {
-        eprintln!("SKROOT_PARITY_BOOTS unset; skipping SKRoot parity test");
-        return;
-    };
+    let boots =
+        env::var("SKROOT_PARITY_BOOTS").expect("SKROOT_PARITY_BOOTS must name boot image fixtures");
     let exe = PathBuf::from(env::var("SKROOT_PARITY_EXE").expect("SKROOT_PARITY_EXE"));
     let sep = if cfg!(windows) { ';' } else { ':' };
     let mut count = 0usize;

@@ -6,10 +6,10 @@
 //!
 //! ```text
 //! magiskboot unpack boot.img            # produces ./kernel
-//! SKROOT_TEST_KERNELS=/path/to/kernel cargo test -p ltbox-patch --test skroot_kallsyms
+//! SKROOT_TEST_KERNELS=/path/to/kernel cargo test -p ltbox-patch --test skroot_kallsyms -- --ignored
 //! ```
 //!
-//! With the variable unset the test is a no-op so CI stays green.
+//! Explicitly ignored by default; opt in with the required corpus variable.
 
 use ltbox_patch::skroot::init_cred;
 use ltbox_patch::skroot::kallsyms;
@@ -30,11 +30,10 @@ const EXPECTED_FUNCS: &[&str] = &[
 ];
 
 #[test]
+#[ignore = "requires SKROOT_TEST_KERNELS real-kernel corpus"]
 fn decodes_real_kernels() {
-    let Ok(list) = std::env::var("SKROOT_TEST_KERNELS") else {
-        eprintln!("SKROOT_TEST_KERNELS unset — skipping real-kernel decode test");
-        return;
-    };
+    let list = std::env::var("SKROOT_TEST_KERNELS")
+        .expect("SKROOT_TEST_KERNELS must name real kernel fixtures");
 
     // Use the platform path separator so Windows drive colons survive.
     let sep = if cfg!(windows) { ';' } else { ':' };
