@@ -116,6 +116,9 @@ pub(super) fn fetch_nightly_apk_outer_zip(
     // those and reported "no .apk found after extract".
     let mut apk_candidates: Vec<PathBuf> = Vec::new();
     collect_apks_recursive(&staging, &mut apk_candidates);
+    if repo == "topjohnwu/Magisk" {
+        apk_candidates.retain(|path| magisk_bundle_apk(path));
+    }
     let apk_src = pick_preferred_apk_path(&apk_candidates)
         .cloned()
         .ok_or_else(|| {
@@ -138,7 +141,7 @@ pub(super) fn fetch_nightly_apk_outer_zip(
 
 /// Fetch a nightly Magisk APK via `nightly.link`. Prefers `app-release` /
 /// `apk-ng-release` artifacts over debug. `manual_run_id = None` →
-/// latest successful `ci.yml` run on `master`.
+/// latest successful `build.yml` run on `master`.
 pub fn download_magisk_apk_nightly(
     provider: RootProvider,
     manual_run_id: Option<u64>,
@@ -154,27 +157,11 @@ pub fn download_magisk_apk_nightly(
             "{repo} run {run_id} has no artifacts"
         )));
     }
-    // Prefer release variants over debug artifacts.
-    let preferred: &[&str] = &["app-release", "apk-ng-release"];
-    let artifact_name = preferred
-        .iter()
-        .find_map(|p| {
-            artifact_names
-                .iter()
-                .find(|n| n.to_lowercase().starts_with(p))
-                .cloned()
-        })
-        .or_else(|| {
-            artifact_names
-                .iter()
-                .find(|n| !n.to_lowercase().contains("debug"))
-                .cloned()
-        })
-        .ok_or_else(|| {
-            LtboxError::Patch(format!(
-                "{repo} run {run_id}: no release APK artifact (got {artifact_names:?})"
-            ))
-        })?;
+    let artifact_name = select_magisk_artifact(&artifact_names).ok_or_else(|| {
+        LtboxError::Patch(format!(
+            "{repo} run {run_id}: no release APK artifact (got {artifact_names:?})"
+        ))
+    })?;
     ltbox_core::live!(
         log,
         "[Magisk] {repo} {}",
@@ -191,4 +178,51 @@ pub fn download_magisk_apk_nightly(
         log,
     )?;
     Ok(run_id)
+}
+
+fn magisk_bundle_apk(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            let name = name.to_ascii_lowercase();
+            name.starts_with("app-") || name.starts_with("magisk")
+        })
+}
+
+/// Current builds use the full commit SHA; never mistake `SHA-symbols` or
+/// test logs for the APK bundle. Retain explicit legacy release names.
+fn select_magisk_artifact(names: &[String]) -> Option<String> {
+    for prefix in ["app-release", "apk-ng-release"] {
+        if let Some(name) = names
+            .iter()
+            .find(|name| name.to_ascii_lowercase().starts_with(prefix))
+        {
+            return Some(name.clone());
+        }
+    }
+    names
+        .iter()
+        .find(|name| name.len() == 40 && name.bytes().all(|b| b.is_ascii_hexdigit()))
+        .cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn nightly_bundle_prefers_release_and_excludes_symbols_and_logs() {
+        assert!(magisk_bundle_apk(Path::new("out/app-release.apk")));
+        assert!(!magisk_bundle_apk(Path::new("out/stub-release.apk")));
+        assert!(!magisk_bundle_apk(Path::new("out/test.apk")));
+        let sha = "37063225d4f344a8f41de8201f679e57098cb7e6";
+        let mut names = vec![format!("{sha}-symbols"), "avd-logs-35".into()];
+        assert!(select_magisk_artifact(&names).is_none());
+        names.push(sha.into());
+        assert_eq!(select_magisk_artifact(&names).as_deref(), Some(sha));
+        names.push("app-release".into());
+        assert_eq!(
+            select_magisk_artifact(&names).as_deref(),
+            Some("app-release")
+        );
+    }
 }

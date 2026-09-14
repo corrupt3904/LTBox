@@ -28,7 +28,7 @@ pub(super) fn ksu_manager_stable_preferences(provider: RootProvider) -> &'static
     match provider {
         RootProvider::KernelSU => &["-release.apk"],
         RootProvider::KernelSUNext => &["-spoofed", "-release.apk"],
-        RootProvider::SukiSU => &["-spoofed", "-release.apk"],
+        RootProvider::SukiSU => &["-spoofed", "-release.apk", "_releases.apk"],
         // ReSukiSU publishes no stable releases; GUI gates this off but we
         // also return empty here so a stray Stable call fails fast instead
         // of grabbing some unrelated asset.
@@ -251,6 +251,19 @@ mod tests {
         select_manager_asset,
     };
     use std::path::PathBuf;
+
+    #[test]
+    fn sukisu_plural_release_suffix_is_selected() {
+        use super::{RootProvider, ksu_manager_stable_preferences};
+        let assets = vec![("SukiSU_v4.2.0_40900_releases.apk".into(), "url".into())];
+        assert!(
+            select_manager_asset(
+                &assets,
+                ksu_manager_stable_preferences(RootProvider::SukiSU)
+            )
+            .is_some()
+        );
+    }
 
     #[test]
     fn apk_preference_arm64_v8a_wins() {

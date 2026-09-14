@@ -553,6 +553,43 @@ pub fn download_ksu_payload(
     )
 }
 
+fn download_release_payload_zip(
+    url: &str,
+    staging_dir: &Path,
+    suffix: &str,
+    destination: &Path,
+    log: &mut Vec<String>,
+) -> Result<()> {
+    let archive_path = staging_dir.join("release_payload.zip");
+    download_to_file(url, &archive_path, log)?;
+    let mut archive = zip::ZipArchive::new(fs::File::open(&archive_path)?)
+        .map_err(|e| LtboxError::Patch(format!("Release payload ZIP: {e}")))?;
+    let names: Vec<String> = archive
+        .file_names()
+        .filter(|name| !name.ends_with('/') && name.ends_with(suffix))
+        .map(str::to_owned)
+        .collect();
+    if names.len() != 1 {
+        return Err(LtboxError::Patch(format!(
+            "Expected one {suffix} payload, found {}",
+            names.len()
+        )));
+    }
+    let mut entry = archive
+        .by_name(&names[0])
+        .map_err(|e| LtboxError::Patch(e.to_string()))?;
+    crate::zip_util::copy_capped(
+        &mut entry,
+        destination,
+        crate::zip_util::MAX_ENTRY_BYTES,
+        &names[0],
+    )?;
+    drop(entry);
+    drop(archive);
+    fs::remove_file(archive_path)?;
+    Ok(())
+}
+
 pub(super) fn download_ksu_release_payload(
     provider: RootProvider,
     release_tag: Option<&str>,
@@ -583,7 +620,11 @@ pub(super) fn download_ksu_release_payload(
             )
         })?;
     fs::create_dir_all(staging_dir)?;
-    let release_ko = select_ksu_release_ko_asset(&assets, &kver, device_branch);
+    let names: Vec<String> = assets.iter().map(|(name, _)| name.clone()).collect();
+    let release_ko = select_ksu_release_ko_asset(&assets, &kver, device_branch).or_else(|| {
+        select_ksu_nightly_ko_artifact(&names, &kver, device_branch)
+            .and_then(|name| assets.iter().find(|(n, _)| n == &name).cloned())
+    });
     if let Some((ko_name, ko_url)) = release_ko.as_ref() {
         ltbox_core::live!(
             log,
@@ -591,7 +632,25 @@ pub(super) fn download_ksu_release_payload(
             tr_args!("log_ksu_downloading_lkm_release_asset", name = ko_name)
         );
         let ko_path = staging_dir.join("kernelsu.ko");
-        download_to_file(ko_url, &ko_path, log)?;
+        if ko_name.ends_with(".zip") {
+            download_release_payload_zip(ko_url, staging_dir, ".ko", &ko_path, log)?;
+        } else {
+            download_to_file(ko_url, &ko_path, log)?;
+        }
+    }
+
+    let release_init =
+        select_ksuinit_artifact(&names).and_then(|name| assets.iter().find(|(n, _)| n == &name));
+    if let Some((name, url)) = release_init {
+        let init = staging_dir.join("init");
+        if name.ends_with(".zip") {
+            download_release_payload_zip(url, staging_dir, "ksuinit", &init, log)?;
+        } else {
+            download_to_file(url, &init, log)?;
+        }
+    }
+    if release_ko.is_some() && release_init.is_some() {
+        return Ok(());
     }
 
     // Resolve the release-tag run once. It always supplies ksuinit and, when
@@ -645,6 +704,9 @@ pub(super) fn download_ksu_release_payload(
         .map_err(|e| stable_lkm_sources_exhausted(&tag, &kver, e))?;
     }
 
+    if release_init.is_some() {
+        return Ok(());
+    }
     // -------- 2. `ksuinit` binary via nightly.link --------
     let ksuinit_artifact = select_ksuinit_artifact(&artifact_names).ok_or_else(|| {
         LtboxError::Download(format!(

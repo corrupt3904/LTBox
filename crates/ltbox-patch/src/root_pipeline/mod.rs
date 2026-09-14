@@ -212,7 +212,7 @@ pub struct RootPipelineConfig {
 /// Returns `None` for providers without a nightly channel (e.g. MagiskFork).
 fn provider_workflow(provider: RootProvider) -> Option<(&'static str, &'static str)> {
     Some(match provider {
-        RootProvider::Magisk => ("ci.yml", "master"),
+        RootProvider::Magisk => ("build.yml", "master"),
         RootProvider::MagiskFork => return None,
         RootProvider::KernelSU => ("build-manager.yml", "main"),
         RootProvider::KernelSUNext => ("build-manager-ci.yml", "dev"),
