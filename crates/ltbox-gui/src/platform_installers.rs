@@ -80,6 +80,31 @@ pub(super) fn install_udev_rules() -> ! {
     std::process::exit(1);
 }
 
+/// Escape both the desktop string layer and the Exec argument layer.
+#[cfg(any(target_os = "linux", test))]
+fn desktop_exec(executable: &str) -> Option<String> {
+    if executable
+        .chars()
+        .any(|c| c == '\n' || c == '\r' || c == '\0')
+    {
+        return None;
+    }
+    let mut result = String::from("\"");
+    for ch in executable.chars() {
+        match ch {
+            '\\' => result.push_str(r"\\\\"),
+            '"' | '`' | '$' => {
+                result.push_str(r"\\");
+                result.push(ch);
+            }
+            '%' => result.push_str("%%"),
+            _ => result.push(ch),
+        }
+    }
+    result.push('"');
+    Some(result)
+}
+
 /// `ltbox --install-desktop` entry point. Linux only. Per-user install
 /// under `$XDG_DATA_HOME` (default `~/.local/share`); refreshes the
 /// desktop and icon caches. The `__LTBOX_EXEC__` placeholder in the bundled
@@ -115,7 +140,11 @@ pub(super) fn install_desktop_file() -> ! {
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "ltbox".into());
-    let desktop = DESKTOP_FILE_TEMPLATE.replace("__LTBOX_EXEC__", &exe);
+    let Some(quoted) = desktop_exec(&exe) else {
+        eprintln!("[ltbox] Executable path cannot be represented in a desktop entry.");
+        std::process::exit(1);
+    };
+    let desktop = DESKTOP_FILE_TEMPLATE.replace("__LTBOX_EXEC__", &quoted);
 
     eprintln!("[ltbox] Writing desktop entry → {}", desktop_path.display());
     if let Err(e) = fs::write(&desktop_path, desktop) {
@@ -156,4 +185,29 @@ pub(super) fn install_desktop_file() -> ! {
         "[ltbox] --install-desktop is Linux-only — desktop entries follow the freedesktop.org spec."
     );
     std::process::exit(1);
+}
+
+#[cfg(test)]
+mod desktop_tests {
+    use super::desktop_exec;
+    #[test]
+    fn exec_quotes_spaces_and_escapes_field_codes_and_metacharacters() {
+        assert_eq!(
+            desktop_exec("/home/a b/ltbox"),
+            Some("\"/home/a b/ltbox\"".into())
+        );
+        assert_eq!(
+            desktop_exec("/tmp/100%/ltbox"),
+            Some("\"/tmp/100%%/ltbox\"".into())
+        );
+        assert!(desktop_exec("/tmp/bad\nExec=other").is_none());
+        for character in ['$', '`', '"'] {
+            assert!(
+                desktop_exec(&character.to_string())
+                    .unwrap()
+                    .contains(&format!(r"\\{character}"))
+            );
+        }
+        assert_eq!(desktop_exec(r"a\b").unwrap(), "\"a\\\\\\\\b\"");
+    }
 }
