@@ -787,6 +787,36 @@ mod tests {
     }
 
     #[test]
+    fn testkey_firmware_cannot_skip_the_required_efisp_bootloader() {
+        use ltbox_patch::efisp_load::EfispLoad::{No, Undetermined, Yes};
+        for candidate in [None, Some(No), Some(Undetermined)] {
+            let mut app = canoe_app(No);
+            app.flash.firmware_identity.as_mut().unwrap().key_class =
+                ltbox_patch::key_map::KeyClass::Testkey;
+            if let Some(state) = candidate {
+                app.flash.user_abl_path = Some("candidate.elf".into());
+                app.flash.user_abl_efisp_load = state;
+            }
+            let _task = app.update_flash(FlashMsg::FlashNext);
+            assert_eq!(app.flash.current_step(), FlashStep::Bootloader);
+            assert!(!app.flash.no_efisp_load);
+            app.flash.set_step(FlashStep::Confirm);
+            let _task = app.update_flash(FlashMsg::FlashNext);
+            assert_eq!(app.flash.current_step(), FlashStep::Confirm);
+            let before = app.log_lines.clone();
+            let _task = app.update_flash(FlashMsg::FlashExecStart);
+            assert_eq!(app.log_lines, before);
+            app.flash.set_step(FlashStep::Bootloader);
+            app.flash.user_abl_path = Some("valid.elf".into());
+            app.flash.user_abl_efisp_load = Yes;
+            let _task = app.update_flash(FlashMsg::FlashNext);
+            assert_eq!(app.flash.current_step(), FlashStep::Confirm);
+            assert!(!app.flash.no_efisp_load);
+            assert!(app.flash.bootloader_execution_allowed());
+        }
+    }
+
+    #[test]
     fn no_efisp_decision_is_explicit_and_cleared_on_selection_changes() {
         use ltbox_patch::efisp_load::EfispLoad::{No, Undetermined, Yes};
         let mut app = canoe_app(No);

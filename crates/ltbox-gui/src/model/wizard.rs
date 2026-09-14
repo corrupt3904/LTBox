@@ -890,7 +890,9 @@ impl FlashWizard {
             match self.user_abl_path {
                 Some(_) => self.user_abl_efisp_load == ltbox_patch::efisp_load::EfispLoad::Yes,
                 None => self.firmware_identity.as_ref().is_some_and(|identity| {
-                    identity.efisp_load != ltbox_patch::efisp_load::EfispLoad::Undetermined
+                    identity.efisp_load == ltbox_patch::efisp_load::EfispLoad::Yes
+                        || (identity.efisp_load == ltbox_patch::efisp_load::EfispLoad::No
+                            && identity.key_class != ltbox_patch::key_map::KeyClass::Testkey)
                 }),
             }
         } else {
@@ -2407,6 +2409,44 @@ mod flash_tests {
                 assert_eq!(wizard.user_abl_efisp_load, Undetermined);
                 wizard.reset_firmware_identity();
                 assert!(wizard.firmware_identity.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn canoe_testkey_without_efisp_requires_an_efisp_bootloader() {
+        use ltbox_patch::efisp_load::EfispLoad::{No, Undetermined, Yes};
+        for model in ["TB323FU", "TB324ZC"] {
+            for firmware_state in [No, Undetermined, Yes] {
+                for token_only in [false, true] {
+                    let mut firmware = identity(
+                        KeyClass::Testkey,
+                        &format!("qti/{model}/{model}:15/build:user/test-keys"),
+                    );
+                    firmware.efisp_load = firmware_state;
+                    if token_only {
+                        firmware.fingerprint = None;
+                        firmware.model_token = Some(model.into());
+                    }
+                    let mut wizard = FlashWizard {
+                        firmware_identity: Some(firmware),
+                        ..Default::default()
+                    };
+                    assert_eq!(wizard.bootloader_can_next(), firmware_state == Yes);
+                    // A stale opt-out must not bypass the required candidate.
+                    wizard.no_efisp_load = true;
+                    assert_eq!(wizard.bootloader_execution_allowed(), firmware_state == Yes);
+                    wizard.user_abl_path = Some("candidate.elf".into());
+                    for candidate in [No, Undetermined, Yes] {
+                        wizard.user_abl_efisp_load = candidate;
+                        assert_eq!(wizard.bootloader_can_next(), candidate == Yes);
+                        assert_eq!(wizard.bootloader_execution_allowed(), candidate == Yes);
+                    }
+                    wizard.user_abl_analyzing = true;
+                    assert!(!wizard.bootloader_can_next());
+                    wizard.clear_bootloader();
+                    assert_eq!(wizard.bootloader_can_next(), firmware_state == Yes);
+                }
             }
         }
     }
