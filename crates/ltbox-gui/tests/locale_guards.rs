@@ -51,20 +51,93 @@ fn load_locale(locale: &str) -> BTreeMap<String, String> {
         .unwrap_or_else(|error| panic!("{} must parse: {error}", path.display()))
 }
 
-fn production_source(source: &str) -> &str {
-    // Every in-source test module in this workspace is an end-of-file
-    // `#[cfg(test)]` module (plus one Windows-only test module). Cutting at
-    // that structural boundary keeps fallback probes and test assertions
-    // from masquerading as production translation references.
-    let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let trimmed = line.trim();
-        if trimmed == "#[cfg(test)]" || trimmed.starts_with("#[cfg(all(test,") {
-            return &source[..offset];
-        }
-        offset += line.len();
+fn production_source(source: &str) -> String {
+    use syn::{spanned::Spanned, visit::Visit};
+    struct TestItems {
+        ranges: Vec<proc_macro2::Span>,
     }
-    source
+    fn requires_test(meta: &syn::Meta) -> bool {
+        if meta.path().is_ident("test") {
+            return true;
+        }
+        let syn::Meta::List(list) = meta else {
+            return false;
+        };
+        let Ok(items) = list.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+        ) else {
+            return false;
+        };
+        if list.path.is_ident("all") {
+            items.iter().any(requires_test)
+        } else if list.path.is_ident("any") {
+            !items.is_empty() && items.iter().all(requires_test)
+        } else {
+            false
+        }
+    }
+    impl<'ast> Visit<'ast> for TestItems {
+        fn visit_item(&mut self, item: &'ast syn::Item) {
+            let attrs: &[syn::Attribute] = match item {
+                syn::Item::Fn(v) => &v.attrs,
+                syn::Item::Mod(v) => &v.attrs,
+                syn::Item::Const(v) => &v.attrs,
+                syn::Item::Static(v) => &v.attrs,
+                syn::Item::Impl(v) => &v.attrs,
+                syn::Item::Struct(v) => &v.attrs,
+                syn::Item::Enum(v) => &v.attrs,
+                syn::Item::Trait(v) => &v.attrs,
+                syn::Item::Type(v) => &v.attrs,
+                syn::Item::Use(v) => &v.attrs,
+                syn::Item::Macro(v) => &v.attrs,
+                syn::Item::ForeignMod(v) => &v.attrs,
+                syn::Item::Union(v) => &v.attrs,
+                _ => &[],
+            };
+            if attrs.iter().any(|a| {
+                a.path().is_ident("cfg")
+                    && a.parse_args::<syn::Meta>().is_ok_and(|m| requires_test(&m))
+            }) {
+                self.ranges.push(item.span());
+            } else {
+                syn::visit::visit_item(self, item);
+            }
+        }
+    }
+    let parsed = syn::parse_file(source).expect("Rust source must parse for locale checks");
+    let mut visitor = TestItems { ranges: Vec::new() };
+    visitor.visit_file(&parsed);
+    let mut line_starts = vec![0];
+    line_starts.extend(source.match_indices('\n').map(|(index, _)| index + 1));
+    let mut bytes = source.as_bytes().to_vec();
+    for span in visitor.ranges {
+        let start = span.start();
+        let end = span.end();
+        let start = line_starts[start.line - 1] + start.column;
+        let end = line_starts[end.line - 1] + end.column;
+        for byte in &mut bytes[start..end] {
+            if *byte != b'\n' {
+                *byte = b' ';
+            }
+        }
+    }
+    String::from_utf8(bytes).expect("masked source remains UTF-8")
+}
+
+#[test]
+fn production_scan_keeps_code_after_test_modules() {
+    let source = r#"#[cfg(test)]
+#[path = "external.rs"] mod tests;
+fn production() { tr("real_key"); }
+#[cfg(all(test, windows))] mod windows_tests { fn sample() { tr("fake_key"); } }
+fn later() { tr("later_key"); }
+"#;
+    let filtered = production_source(source);
+    assert!(filtered.contains("real_key"));
+    assert!(filtered.contains("later_key"));
+    assert!(!filtered.contains("fake_key"));
+    assert!(!filtered.contains("external.rs"));
+    assert_eq!(filtered.lines().count(), source.lines().count());
 }
 
 fn rust_tokens(source: &str) -> Vec<RustToken<'_>> {
@@ -266,7 +339,8 @@ fn scan_production_translation_sources() -> TranslationSourceScan {
         {
             continue;
         }
-        let tokens = rust_tokens(production_source(&source));
+        let production = production_source(&source);
+        let tokens = rust_tokens(&production);
         for (index, token) in tokens.iter().enumerate() {
             let RustTokenKind::Ident(name) = token.kind else {
                 continue;
