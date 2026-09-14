@@ -1863,16 +1863,12 @@ struct App {
     sidebar_velocity: f32,
     sidebar_label_alpha: f32,
     sidebar_label_velocity: f32,
-    /// Current logical window size. Tracks `Event::Window(Resized)`
-    /// so the user's preferred geometry survives restarts via
-    /// `PersistedSettings::window_size`. A simple `Instant` debounce
-    /// throttles persistence writes during cursor-drag resize since
-    /// resize events fire on every frame.
+    /// Current layout dimensions, including maximized windows.
     window_size: (f32, f32),
-    /// Last instant a window-size save hit disk. Cursor-drag resize
-    /// fires `Resized` continuously; persistence is throttled to once
-    /// per `WINDOW_SIZE_SAVE_INTERVAL`.
-    window_size_last_save: std::time::Instant,
+    /// Last confirmed normal-window size used on the next launch.
+    window_restore_size: (f32, f32),
+    /// Last resize event, used for trailing debounce rather than throttling.
+    window_size_last_change: std::time::Instant,
     /// `true` while a pending window-size update hasn't been flushed
     /// to disk. Cleared by `persist_window_size_if_due`.
     window_size_dirty: bool,
@@ -2076,7 +2072,10 @@ impl Default for App {
             window_size: persisted
                 .window_size
                 .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)),
-            window_size_last_save: std::time::Instant::now(),
+            window_restore_size: persisted
+                .window_size
+                .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)),
+            window_size_last_change: std::time::Instant::now(),
             window_size_dirty: false,
             operation: OperationExecution::default(),
             recent_paths: persisted.recent_paths.clone(),
@@ -3034,7 +3033,7 @@ impl App {
             recent_paths: self.recent_paths.clone(),
             default_loader_path: self.default_loader_path.clone(),
             qcom_driver_mode: self.qcom_driver_mode.code().to_string(),
-            window_size: Some(self.window_size),
+            window_size: Some(self.window_restore_size),
             qcom_driver_update_dismissed: self.qcom_driver_update_dismissed,
             dual_usb_advisory_dismissed_models: self.dual_usb_advisory_dismissed.clone(),
         });

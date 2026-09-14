@@ -181,6 +181,15 @@ impl App {
             Message::WindowMaximized(maximized) => {
                 self.window_maximized = maximized;
             }
+            Message::WindowGeometryMeasured(request, w, h, maximized) => {
+                if request == self.window_size_last_change {
+                    self.window_maximized = maximized;
+                    if !maximized {
+                        self.window_restore_size = (w, h);
+                        self.window_size_dirty = true;
+                    }
+                }
+            }
             Message::PersistWindowSize => return self.update_persist_window_size(),
             // Navigation
             Message::Noop => {}

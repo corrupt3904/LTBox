@@ -200,6 +200,7 @@ pub(crate) enum Message {
     /// Current host maximized state. Queried from iced because window
     /// events expose resize/move but not a dedicated maximize notification.
     WindowMaximized(bool),
+    WindowGeometryMeasured(std::time::Instant, f32, f32, bool),
     /// Tick from a periodic subscription; flushes the latest window
     /// size to disk if `window_size_dirty` is set and the debounce
     /// interval has elapsed since the last save.

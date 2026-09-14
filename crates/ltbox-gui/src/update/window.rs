@@ -55,6 +55,7 @@ impl App {
                     return Task::none();
                 }
                 self.konabess.cleanup_prepared();
+                self.persist_settings();
                 self.window_id
                     .map(iced::window::close)
                     .unwrap_or_else(Task::none)
@@ -66,19 +67,22 @@ impl App {
         }
     }
 
-    /// Cursor-drag resize / maximize / restore funnel through here.
-    /// Snap the persisted size to the `MIN_WINDOW_*` floor so a
-    /// maximize → store → relaunch sequence still launches at a usable
-    /// geometry rather than below the layout floor.
+    /// Keep layout current, then confirm native maximize state before saving
+    /// normal geometry. Late replies from earlier resize events are ignored.
     pub(crate) fn update_window_resized(&mut self, w: f32, h: f32) -> Task<Message> {
+        if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
+            return Task::none();
+        }
         let w = w.max(MIN_WINDOW_WIDTH);
         let h = h.max(MIN_WINDOW_HEIGHT);
-        if (w, h) != self.window_size {
-            self.window_size = (w, h);
-            self.window_size_dirty = true;
-        }
+        self.window_size = (w, h);
+        self.window_size_last_change = std::time::Instant::now();
+        let request = self.window_size_last_change;
         self.window_id
-            .map(|id| iced::window::is_maximized(id).map(Message::WindowMaximized))
+            .map(|id| {
+                iced::window::is_maximized(id)
+                    .map(move |maximized| Message::WindowGeometryMeasured(request, w, h, maximized))
+            })
             .unwrap_or_else(Task::none)
     }
 
@@ -86,11 +90,10 @@ impl App {
     /// stream has been quiet for `WINDOW_SIZE_SAVE_INTERVAL`.
     pub(crate) fn update_persist_window_size(&mut self) -> Task<Message> {
         if self.window_size_dirty
-            && self.window_size_last_save.elapsed() >= WINDOW_SIZE_SAVE_INTERVAL
+            && self.window_size_last_change.elapsed() >= WINDOW_SIZE_SAVE_INTERVAL
         {
             self.persist_settings();
             self.window_size_dirty = false;
-            self.window_size_last_save = std::time::Instant::now();
         }
         Task::none()
     }
@@ -99,6 +102,26 @@ impl App {
 #[cfg(test)]
 mod tests {
     use crate::*;
+
+    #[test]
+    fn maximized_and_stale_measurements_do_not_overwrite_restore_geometry() {
+        let mut app = App::default();
+        let normal = app.window_restore_size;
+        drop(app.update_window_resized(1920.0, 1080.0));
+        let old = app.window_size_last_change;
+        drop(app.update(Message::WindowGeometryMeasured(old, 1920.0, 1080.0, true)));
+        assert_eq!(app.window_restore_size, normal);
+        drop(app.update_window_resized(1000.0, 800.0));
+        let current = app.window_size_last_change;
+        drop(app.update(Message::WindowGeometryMeasured(old, 1920.0, 1080.0, false)));
+        assert_eq!(app.window_restore_size, normal);
+        drop(app.update(Message::WindowGeometryMeasured(
+            current, 1000.0, 800.0, false,
+        )));
+        assert_eq!(app.window_restore_size, (1000.0, 800.0));
+        drop(app.update_persist_window_size());
+        assert!(app.window_size_dirty, "recent resize must remain debounced");
+    }
 
     #[test]
     fn late_empty_startup_query_preserves_window_controls_during_work() {
