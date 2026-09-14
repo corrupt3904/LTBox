@@ -532,6 +532,8 @@ pub(crate) struct UnrootWizard {
     /// LTBox-owned root snapshots, refreshed whenever the folder step is entered.
     pub(crate) backup_folders: Vec<crate::backup::BackupFolderEntry>,
     pub(crate) backup_scan_error: Option<String>,
+    pub(crate) backup_scan_request: Option<std::time::Instant>,
+    pub(crate) backup_manifest_request: Option<std::time::Instant>,
     pub(crate) backup_manifest_dialog: Option<crate::backup::BackupManifestDialog>,
 }
 

@@ -262,15 +262,56 @@ fn first_run_default() -> PersistedSettings {
     }
 }
 
-/// Persist settings without exposing a partial JSON file. Report failures in
-/// the log while allowing the GUI to continue with its in-memory settings.
+enum SaveRequest {
+    Save(Box<PersistedSettings>),
+    Flush(std::sync::mpsc::Sender<()>),
+}
+static WRITER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<SaveRequest>>> =
+    std::sync::OnceLock::new();
+
+/// Queue snapshots in order; disk synchronization never blocks UI updates.
 pub fn save(settings: &PersistedSettings) {
-    let Some(path) = config_path() else {
-        tracing::warn!("cannot save settings: no configuration directory is available");
-        return;
-    };
-    if let Err(error) = save_to_path(&path, settings) {
-        tracing::warn!(path = %path.display(), %error, "failed to save settings");
+    let writer = WRITER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        match std::thread::Builder::new()
+            .name("settings-writer".into())
+            .spawn(move || {
+                while let Ok(request) = receiver.recv() {
+                    match request {
+                        SaveRequest::Save(settings) => {
+                            if let Some(path) = config_path() {
+                                if let Err(error) = save_to_path(&path, &settings) {
+                                    tracing::warn!(%error, "failed to save settings");
+                                }
+                            } else {
+                                tracing::warn!("no configuration directory available");
+                            }
+                        }
+                        SaveRequest::Flush(done) => {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            }) {
+            Ok(_) => Some(sender),
+            Err(error) => {
+                tracing::warn!(%error, "cannot start settings writer");
+                None
+            }
+        }
+    });
+    if let Some(writer) = writer {
+        let _ = writer.send(SaveRequest::Save(Box::new(settings.clone())));
+    }
+}
+
+/// Drain queued saves after the GUI event loop exits.
+pub fn flush() {
+    if let Some(Some(writer)) = WRITER.get() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        if writer.send(SaveRequest::Flush(sender)).is_ok() {
+            let _ = receiver.recv();
+        }
     }
 }
 

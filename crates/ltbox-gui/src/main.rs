@@ -469,7 +469,9 @@ fn main() -> iced::Result {
     // `fonts/lucide.toml`. Registered under the family `"lucide"` so
     // the text-based icon widgets from `mod icon` resolve against it.
     app = app.font(icon::FONT);
-    app.run()
+    let result = app.run();
+    settings_store::flush();
+    result
 }
 
 /// Global tracing subscriber writing daily-rotated files under

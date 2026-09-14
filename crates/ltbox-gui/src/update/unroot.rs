@@ -4,17 +4,14 @@ use crate::*;
 use iced::Task;
 
 impl App {
-    fn refresh_unroot_backups(&mut self) {
-        match backup::root_backup_folders() {
-            Ok(folders) => {
-                self.unroot.backup_folders = folders;
-                self.unroot.backup_scan_error = None;
-            }
-            Err(error) => {
-                self.unroot.backup_folders.clear();
-                self.unroot.backup_scan_error = Some(error);
-            }
-        }
+    fn refresh_unroot_backups(&mut self) -> Task<Message> {
+        let request = std::time::Instant::now();
+        self.unroot.backup_scan_request = Some(request);
+        task_heavy(
+            backup::root_backup_folders,
+            move |result| Message::Unroot(UnrootMsg::BackupsLoaded(request, result)),
+            Err,
+        )
     }
 
     pub(crate) fn update_unroot(&mut self, msg: UnrootMsg) -> Task<Message> {
@@ -42,13 +39,49 @@ impl App {
             }
             UnrootMsg::UnrootBackupManifestOpen(path) => {
                 let folder = std::path::PathBuf::from(path);
-                let result = backup::read_backup_manifest(&folder);
-                self.unroot.backup_manifest_dialog =
-                    Some(backup::BackupManifestDialog { folder, result });
-                Task::none()
+                let request = std::time::Instant::now();
+                self.unroot.backup_manifest_request = Some(request);
+                self.unroot.backup_manifest_dialog = None;
+                let failed_folder = folder.clone();
+                task_heavy(
+                    move || backup::BackupManifestDialog {
+                        result: backup::read_backup_manifest(&folder),
+                        folder,
+                    },
+                    move |dialog| Message::Unroot(UnrootMsg::ManifestLoaded(request, dialog)),
+                    move |error| backup::BackupManifestDialog {
+                        folder: failed_folder,
+                        result: Err(error),
+                    },
+                )
             }
             UnrootMsg::UnrootBackupManifestClose => {
+                self.unroot.backup_manifest_request = None;
                 self.unroot.backup_manifest_dialog = None;
+                Task::none()
+            }
+            UnrootMsg::BackupsLoaded(request, result) => {
+                if self.unroot.backup_scan_request != Some(request) {
+                    return Task::none();
+                }
+                self.unroot.backup_scan_request = None;
+                match result {
+                    Ok(folders) => {
+                        self.unroot.backup_folders = folders;
+                        self.unroot.backup_scan_error = None;
+                    }
+                    Err(error) => {
+                        self.unroot.backup_folders.clear();
+                        self.unroot.backup_scan_error = Some(error);
+                    }
+                }
+                Task::none()
+            }
+            UnrootMsg::ManifestLoaded(request, dialog) => {
+                if self.unroot.backup_manifest_request == Some(request) {
+                    self.unroot.backup_manifest_request = None;
+                    self.unroot.backup_manifest_dialog = Some(dialog);
+                }
                 Task::none()
             }
             UnrootMsg::UnrootSelectLoader => self.pick_loader_with_default(|__v| {
@@ -80,7 +113,7 @@ impl App {
                     self.unroot.next();
                 }
                 if self.unroot.step == 2 {
-                    self.refresh_unroot_backups();
+                    return self.refresh_unroot_backups();
                 }
                 Task::none()
             }
@@ -153,5 +186,34 @@ impl App {
                 Task::none()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod async_backup_tests {
+    use super::*;
+    #[test]
+    fn stale_manifest_completion_does_not_reopen_closed_dialog() {
+        let mut app = App::default();
+        let request = std::time::Instant::now();
+        app.unroot.backup_manifest_request = Some(request);
+        drop(app.update_unroot(UnrootMsg::UnrootBackupManifestClose));
+        drop(app.update_unroot(UnrootMsg::ManifestLoaded(
+            request,
+            backup::BackupManifestDialog {
+                folder: "old".into(),
+                result: Err("old error".into()),
+            },
+        )));
+        assert!(app.unroot.backup_manifest_dialog.is_none());
+    }
+    #[test]
+    fn stale_scan_completion_cannot_replace_a_newer_request() {
+        let mut app = App::default();
+        let old = std::time::Instant::now();
+        app.unroot.backup_scan_request = Some(old + std::time::Duration::from_secs(1));
+        drop(app.update_unroot(UnrootMsg::BackupsLoaded(old, Err("stale".into()))));
+        assert!(app.unroot.backup_scan_error.is_none());
+        assert!(app.unroot.backup_scan_request.is_some());
     }
 }

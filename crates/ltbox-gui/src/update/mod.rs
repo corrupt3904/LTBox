@@ -576,23 +576,24 @@ impl App {
                 if let Some(path) = path {
                     let source = self.pending_log_save_source;
                     let joined = self.log_text_for_save(source);
-                    match std::fs::write(&path, joined) {
-                        Ok(()) => self.note_log_save_result(
-                            source,
-                            tr_args!("log_save_succeeded", path = path.display()),
-                        ),
-                        Err(e) => {
-                            let error = e.to_string();
-                            self.error_msg =
-                                Some(tr_args!("err_log_save_failed", error = error.clone()));
-                            self.note_log_save_result(
-                                source,
-                                tr_args!("log_save_failed", error = error),
-                            );
-                        }
-                    }
+                    let output = path.clone();
+                    return task_heavy(
+                        move || std::fs::write(output, joined).map_err(|e| e.to_string()),
+                        move |result| Message::LogSaved(source, path, result),
+                        Err,
+                    );
                 }
             }
+            Message::LogSaved(source, path, result) => match result {
+                Ok(()) => self.note_log_save_result(
+                    source,
+                    tr_args!("log_save_succeeded", path = path.display()),
+                ),
+                Err(error) => {
+                    self.error_msg = Some(tr_args!("err_log_save_failed", error = error.clone()));
+                    self.note_log_save_result(source, tr_args!("log_save_failed", error = error));
+                }
+            },
             Message::PollSoftwareFix => return self.poll_software_fix(),
             Message::SoftwareFixPolled(result) => self.software_fix_polled(result),
             Message::ForceCloseSoftwareFix => return self.force_close_software_fix(),
