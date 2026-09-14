@@ -301,7 +301,7 @@ impl App {
                 recents,
             ]
             .spacing(6)
-            .padding(28)
+            .padding(PICKER_BODY_PADDING)
             .width(Length::Fill),
         )
         .height(Length::Fill)
@@ -403,7 +403,9 @@ impl App {
             |p| Message::Adv(AdvMsg::AdvWizBrowseDone(Some(p))),
             "picker_recents",
         ));
-        scrollable(content.padding(28)).height(Length::Fill).into()
+        scrollable(content.padding(PICKER_BODY_PADDING))
+            .height(Length::Fill)
+            .into()
     }
 
     /// Step 1 for `RegionConvert`: card that opens the target picker
@@ -709,7 +711,7 @@ impl App {
                 ),
             ]
             .spacing(6)
-            .padding(28)
+            .padding(PICKER_BODY_PADDING)
             .width(Length::Fill),
         )
         .height(Length::Fill)

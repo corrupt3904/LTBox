@@ -1,6 +1,6 @@
 //! KonaBess wizard and DTB target-selection dialog.
 
-use crate::focus_button::{self as button, button};
+use crate::focus_button::button;
 use crate::*;
 use iced::widget::{self, Space, column, container, row, scrollable, text};
 use iced::{Element, Length, Theme};
@@ -174,7 +174,7 @@ impl App {
         if !validation.warnings.is_empty() {
             content = content.push(finding_panel(&validation.warnings, true, self));
         }
-        content = content.push(widget::rule::horizontal(1));
+        content = content.push(widget::rule::horizontal(1).style(shell_rule_style));
         let fill_height = self.window_size.1 >= GPU_TABLE_FILL_MIN_WINDOW_HEIGHT;
         content = content.push(match self.konabess.edited_table.as_ref() {
             Some(table) => gpu_table_view(table, self, &validation, fill_height),
@@ -258,7 +258,7 @@ impl App {
 
     pub(crate) fn konabess_target_popup_view(&self) -> Element<'_, Message> {
         let selected = self.konabess.selected_target_index;
-        let mut candidates = column![].spacing(4.0).width(Length::Fill);
+        let mut candidates = column![].spacing(2.0).width(Length::Fill);
         for candidate in &self.konabess.candidates {
             let index = candidate.index;
             let is_selected = selected == Some(index);
@@ -302,7 +302,15 @@ impl App {
                         }),
                 );
             }
-            let mut candidate_button = button(candidate_body);
+            let mut candidate_button = button(
+                row![
+                    selection_radio(is_selected, can_select, false),
+                    candidate_body.width(Length::Fill),
+                    Space::new().height(56.0),
+                ]
+                .spacing(16)
+                .align_y(iced::Alignment::Center),
+            );
             if can_select {
                 candidate_button = candidate_button.on_press(Message::KonaBess(
                     KonaBessMsg::KonaBessTargetSelected(index),
@@ -310,53 +318,10 @@ impl App {
             }
             candidates = candidates.push(
                 candidate_button
-                    .padding([9.0, 12.0])
+                    .padding([8.0, 16.0])
                     .width(Length::Fill)
                     .style(move |theme: &Theme, status| {
-                        let palette = pal_of(theme);
-                        let background = if is_selected {
-                            Some(
-                                theme::mix_color(
-                                    palette.primary,
-                                    palette.on_primary,
-                                    theme::state_alpha(status),
-                                )
-                                .into(),
-                            )
-                        } else if is_likely {
-                            Some(
-                                theme::mix_color(
-                                    palette.secondary_container,
-                                    palette.on_secondary_container,
-                                    theme::state_alpha(status),
-                                )
-                                .into(),
-                            )
-                        } else {
-                            theme::state_layer_bg(status, palette.on_surface).map(Into::into)
-                        };
-                        button::Style {
-                            background,
-                            text_color: if is_selected {
-                                palette.on_primary
-                            } else if is_likely {
-                                palette.on_secondary_container
-                            } else {
-                                palette.on_surface
-                            },
-                            border: iced::Border {
-                                color: if is_selected {
-                                    palette.primary
-                                } else if is_likely {
-                                    palette.secondary
-                                } else {
-                                    palette.outline
-                                },
-                                width: 1.0,
-                                radius: theme::shape::SM.into(),
-                            },
-                            ..Default::default()
-                        }
+                        expressive_choice_style(theme, status, is_selected, false)
                     }),
             );
         }
@@ -1722,11 +1687,11 @@ fn target_note_style(
 ) -> iced::widget::text::Style {
     if is_selected {
         iced::widget::text::Style {
-            color: Some(pal_of(theme).on_primary),
+            color: Some(pal_of(theme).on_primary_container),
         }
     } else if is_likely {
         iced::widget::text::Style {
-            color: Some(pal_of(theme).on_secondary_container),
+            color: Some(pal_of(theme).secondary),
         }
     } else {
         muted_style(theme)
@@ -1740,14 +1705,11 @@ fn target_shape_style(
 ) -> iced::widget::text::Style {
     if is_selected {
         iced::widget::text::Style {
-            color: Some(theme::with_alpha(pal_of(theme).on_primary, 0.72)),
+            color: Some(theme::with_alpha(pal_of(theme).on_primary_container, 0.72)),
         }
     } else if is_likely {
         iced::widget::text::Style {
-            color: Some(theme::with_alpha(
-                pal_of(theme).on_secondary_container,
-                0.78,
-            )),
+            color: Some(theme::with_alpha(pal_of(theme).on_surface_variant, 0.78)),
         }
     } else {
         muted_style(theme)
@@ -1821,11 +1783,11 @@ mod tests {
 
         assert_eq!(
             target_note_style(&theme, true, false).color,
-            Some(palette.on_primary)
+            Some(palette.on_primary_container)
         );
         assert_eq!(
             target_shape_style(&theme, true, false).color,
-            Some(theme::with_alpha(palette.on_primary, 0.72))
+            Some(theme::with_alpha(palette.on_primary_container, 0.72))
         );
         assert_eq!(
             target_note_style(&theme, false, false).color,
@@ -1837,11 +1799,11 @@ mod tests {
         );
         assert_eq!(
             target_note_style(&theme, false, true).color,
-            Some(palette.on_secondary_container)
+            Some(palette.secondary)
         );
         assert_eq!(
             target_shape_style(&theme, false, true).color,
-            Some(theme::with_alpha(palette.on_secondary_container, 0.78))
+            Some(theme::with_alpha(palette.on_surface_variant, 0.78))
         );
     }
 

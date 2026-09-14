@@ -646,3 +646,39 @@ pub(crate) fn sel_card_btn_style_for(
         ..Default::default()
     }
 }
+
+/// Supplementary icon action: no resting outline, circular interaction states.
+pub(crate) fn m3_standard_icon_button_style(t: &Theme, status: button::Status) -> button::Style {
+    let p = pal_of(t);
+    button::Style {
+        background: theme::state_layer_bg(status, p.on_surface).map(Into::into),
+        text_color: with_alpha(
+            p.on_surface_variant,
+            if matches!(status, button::Status::Disabled) {
+                0.38
+            } else {
+                1.0
+            },
+        ),
+        border: iced::Border {
+            radius: theme::shape::FULL.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+// A flat list sits directly on the dialog surface. Only selection and
+// interaction states add a fill; wizard card backgrounds do not belong here.
+pub(crate) fn dialog_choice_style(
+    t: &Theme,
+    status: button::Status,
+    selected: bool,
+) -> button::Style {
+    let p = pal_of(t);
+    let mut style = expressive_choice_style(t, status, selected, false);
+    if !selected {
+        style.background = theme::state_layer_bg(status, p.on_surface).map(Into::into);
+    }
+    style
+}

@@ -37,10 +37,7 @@ fn parts_numeric_sort_header(
     )
     .padding(0)
     .width(width)
-    .style(|_t: &Theme, _s| button::Style {
-        background: None,
-        ..Default::default()
-    })
+    .style(md_text_btn_style)
     .on_press(msg)
     .into()
 }
@@ -282,7 +279,7 @@ impl App {
             on_chosen,
             "picker_recents",
         ));
-        scrollable(content.padding(28))
+        scrollable(content.padding(PICKER_BODY_PADDING))
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
@@ -330,10 +327,14 @@ impl App {
             .height(Length::Fill)
             .width(Length::Fill);
         container(
-            column![scrolled, widget::rule::horizontal(1), footer]
-                .spacing(0)
-                .width(Length::Fill)
-                .height(Length::Fill),
+            column![
+                scrolled,
+                widget::rule::horizontal(1).style(shell_rule_style),
+                footer
+            ]
+            .spacing(0)
+            .width(Length::Fill)
+            .height(Length::Fill),
         )
         .padding(20.0)
         .width(Length::Fill)
@@ -392,7 +393,8 @@ impl App {
         .width(Length::Fill)
         .align_y(iced::Alignment::Center);
 
-        let mut list = column![header, widget::rule::horizontal(1)].spacing(0);
+        let mut list =
+            column![header, widget::rule::horizontal(1).style(shell_rule_style)].spacing(0);
         for (idx, r) in self.flash_parts.rows.iter().enumerate() {
             let marker_cell: Element<'_, Message> = match r.state {
                 FlashRowState::Skip | FlashRowState::Write => container(focus_button::actionable(
@@ -423,10 +425,7 @@ impl App {
                 .width(Length::Fixed(FLASH_PARTS_MARKER_CELL_WIDTH))
                 .height(Length::Fixed(FLASH_PARTS_ROW_HEIGHT))
                 .on_press(Message::FlashParts(FlashPartsMsg::FlashPartsToggleRow(idx)))
-                .style(|_t: &Theme, _s| button::Style {
-                    background: None,
-                    ..Default::default()
-                })
+                .style(md_text_btn_style)
                 .into(),
             };
 
@@ -832,7 +831,8 @@ impl App {
         .padding([6.0, 10.0])
         .align_y(iced::Alignment::Center);
 
-        let mut list = column![header, widget::rule::horizontal(1)].spacing(0);
+        let mut list =
+            column![header, widget::rule::horizontal(1).style(shell_rule_style)].spacing(0);
         for (idx, row) in self.dump_parts.rows.iter().enumerate() {
             let cb = focus_button::actionable(
                 iced::widget::checkbox(row.selected)
@@ -990,7 +990,8 @@ impl App {
         .padding([6.0, 10.0])
         .align_y(iced::Alignment::Center);
 
-        let mut list = column![header, widget::rule::horizontal(1)].spacing(0);
+        let mut list =
+            column![header, widget::rule::horizontal(1).style(shell_rule_style)].spacing(0);
         for idx in 0..PHYS_LUN_COUNT {
             let checked = self.dump_phys.selected[idx];
             let cb = focus_button::actionable(
@@ -1128,7 +1129,8 @@ impl App {
         .padding([6.0, 10.0])
         .align_y(iced::Alignment::Center);
 
-        let mut list = column![header, widget::rule::horizontal(1)].spacing(0);
+        let mut list =
+            column![header, widget::rule::horizontal(1).style(shell_rule_style)].spacing(0);
         for idx in 0..PHYS_LUN_COUNT {
             let checked = self.flash_phys.selected[idx];
             let cb = focus_button::actionable(

@@ -41,6 +41,8 @@ pub(crate) const M3_BUTTON_H_PADDING: f32 = 16.0;
 /// choosing the width by kind: short confirmation/input, choice/detail, editor.
 /// These live here rather than in `theme` because the locale guards include
 /// this module standalone and must measure the same budgets the widgets use.
+pub(crate) const DIALOG_HEADLINE_SIZE: f32 = 24.0;
+
 pub(crate) const DIALOG_WIDTH_SM: f32 = 400.0;
 pub(crate) const DIALOG_WIDTH_MD: f32 = 520.0;
 pub(crate) const DIALOG_WIDTH_LG: f32 = 720.0;
@@ -53,5 +55,4 @@ pub(crate) const DIRECT_UPDATE_DIALOG_ACTION_SPACING: f32 = 8.0;
 pub(crate) const DIRECT_UPDATE_DIALOG_ACTION_SIZE: f32 = 14.0;
 
 pub(crate) const REGION_TARGET_POPUP_WIDTH: f32 = DIALOG_WIDTH_MD;
-pub(crate) const REGION_TARGET_POPUP_TITLE_SIZE: f32 = 16.0;
 pub(crate) const REGION_TARGET_POPUP_ACTION_SIZE: f32 = 14.0;

@@ -6,6 +6,14 @@ use iced::widget::{self, Space, column, container, row, text};
 use iced::{Element, Length, Theme};
 use theme::with_alpha;
 
+/// The step frame already supplies the title-to-body gap.
+pub(crate) const PICKER_BODY_PADDING: iced::Padding = iced::Padding {
+    top: 0.0,
+    right: 28.0,
+    bottom: 28.0,
+    left: 28.0,
+};
+
 /// Centered M3 dialog card on a scrim. Inner owns padding/width. MODAL: the
 /// whole layer is wrapped in `opaque`, so it captures every pointer event and
 /// nothing behind it reacts. Use for confirm dialogs (reboot, country,
@@ -61,9 +69,9 @@ pub(crate) fn dialog_sections<'a>(
     let mut content = column![
         container(header)
             .padding(iced::Padding {
-                top: 18.0,
+                top: 24.0,
                 right: theme::DIALOG_H_PADDING,
-                bottom: 10.0,
+                bottom: 0.0,
                 left: theme::DIALOG_H_PADDING,
             })
             .width(Length::Fill)
@@ -73,7 +81,12 @@ pub(crate) fn dialog_sections<'a>(
     }
     content = content.push(
         container(body)
-            .padding([16.0, theme::DIALOG_H_PADDING])
+            .padding(iced::Padding {
+                top: 16.0,
+                right: theme::DIALOG_H_PADDING,
+                bottom: 0.0,
+                left: theme::DIALOG_H_PADDING,
+            })
             .width(Length::Fill),
     );
     if scrolling {
@@ -82,12 +95,56 @@ pub(crate) fn dialog_sections<'a>(
     content
         .push(
             container(footer)
-                .padding([14.0, theme::DIALOG_H_PADDING])
+                .padding(iced::Padding {
+                    top: 24.0,
+                    right: theme::DIALOG_H_PADDING,
+                    bottom: 24.0,
+                    left: theme::DIALOG_H_PADDING,
+                })
                 .width(Length::Fill),
         )
         .spacing(0)
         .width(Length::Fixed(width))
         .into()
+}
+
+/// A dialog selection uses the same radio and state colors as wizard choices.
+pub(crate) fn dialog_choice<'a>(
+    label: impl Into<String>,
+    description: Option<String>,
+    selected: bool,
+    action: Option<Message>,
+) -> Element<'a, Message> {
+    let enabled = action.is_some();
+    let mut copy = column![
+        text(label.into())
+            .size(theme::text_size::BODY_MEDIUM)
+            .font_maybe(selected.then_some(theme::emphasis::medium()))
+    ]
+    .spacing(4)
+    .width(Length::Fill);
+    let height = if description.is_some() { 72.0 } else { 56.0 };
+    if let Some(description) = description {
+        copy = copy.push(
+            text(description)
+                .size(theme::text_size::BODY_SMALL)
+                .style(muted_style),
+        );
+    }
+    button(container(
+        row![
+            selection_radio(selected, enabled, false),
+            copy,
+            Space::new().height(height - 16.0)
+        ]
+        .spacing(16)
+        .align_y(iced::Alignment::Center),
+    ))
+    .padding([8, 16])
+    .width(Length::Fill)
+    .on_press_maybe(action)
+    .style(move |t, status| dialog_choice_style(t, status, selected))
+    .into()
 }
 
 pub(crate) fn m3_log_text_field<'a>(
@@ -1124,7 +1181,7 @@ fn wizard_list_option_card_with_role(
             } else if enabled {
                 p.on_surface
             } else {
-                p.on_surface_variant
+                with_alpha(p.on_surface, 0.38)
             }),
         }
     };
@@ -1145,7 +1202,7 @@ fn wizard_list_option_card_with_role(
                 .size(metrics.desc_size)
                 .line_height(16.0 / 12.0)
                 .style(move |t: &Theme| {
-                    if selected {
+                    if selected || !enabled {
                         foreground(t)
                     } else {
                         muted_style(t)
@@ -1210,12 +1267,13 @@ fn wizard_list_option_card_with_role(
     }
 
     let min_height = if sub.is_empty() { metrics.height } else { 72.0 };
-    let inner = container(iced::widget::stack![
-        Space::new()
-            .width(Length::Fill)
-            .height(min_height - metrics.padding.top - metrics.padding.bottom),
-        container(body).center_y(Length::Fill).width(Length::Fill),
-    ])
+    let inner = container(
+        row![
+            body.width(Length::Fill),
+            Space::new().height(min_height - metrics.padding.top - metrics.padding.bottom),
+        ]
+        .align_y(iced::Alignment::Center),
+    )
     .padding(metrics.padding)
     .width(Length::Fill)
     .align_y(iced::Alignment::Center);
@@ -1337,42 +1395,23 @@ impl App {
         grid: Vec<Element<'a, Message>>,
         trailing: Vec<Element<'a, Message>>,
     ) -> Element<'a, Message> {
-        let mut groups: Vec<Element<'a, Message>> = Vec::new();
-
-        if !leading.is_empty() {
-            groups.push(
-                column(leading)
-                    .spacing(8)
-                    .width(Length::Fill)
-                    .align_x(iced::Alignment::Center)
-                    .into(),
-            );
-        }
-
-        if !grid.is_empty() {
-            groups.push(column(grid).spacing(0).width(Length::Fill).into());
-        }
-
-        if !trailing.is_empty() {
-            groups.push(
-                column(trailing)
-                    .spacing(0)
-                    .width(Length::Fill)
-                    .align_x(iced::Alignment::Center)
-                    .into(),
-            );
-        }
-
         let mut content = column![]
             .spacing(8)
             .padding([18, 28])
             .width(Length::Fill)
             .align_x(iced::Alignment::Center);
-        for (index, group) in groups.into_iter().enumerate() {
-            if index > 0 {
-                content = content.push(widget::rule::horizontal(1));
-            }
-            content = content.push(group);
+
+        if !leading.is_empty() {
+            content = content.push(column(leading).spacing(8).width(Length::Fill));
+        }
+
+        // Definition rows own their bottom dividers. Paths are definition rows
+        // too: a second section divider would duplicate the preceding row's
+        // rule. Keep every summary row in one uninterrupted list regardless of
+        // which optional groups the caller supplies.
+        let rows: Vec<_> = grid.into_iter().chain(trailing).collect();
+        if !rows.is_empty() {
+            content = content.push(column(rows).spacing(0).width(Length::Fill));
         }
 
         // The scroller itself shrinks when content is short. Its child
@@ -1757,6 +1796,21 @@ impl App {
             };
         wizard_selection_step(size, width, title, body, Some((String::new(), vec![])))
     }
+}
+
+/// Shared pointer and keyboard entry point for persistent explanatory copy.
+pub(crate) fn help_button(title: String, body: String) -> Element<'static, Message> {
+    button(
+        container(lucide_icon(icon::help_context(), 24.0, |t: &Theme| {
+            pal_of(t).on_surface_variant
+        }))
+        .center_x(48)
+        .center_y(48),
+    )
+    .padding(0)
+    .on_press(Message::HelpShow(title, body))
+    .style(m3_standard_icon_button_style)
+    .into()
 }
 
 #[cfg(test)]

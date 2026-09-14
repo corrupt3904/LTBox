@@ -647,6 +647,8 @@ pub mod emphasis {
 /// M3 type scale (font size in px).
 pub mod text_size {
     pub const TITLE_LARGE: f32 = 22.0;
+    /// Dialog headline uses the Material headline-small role.
+    pub const DIALOG_HEADLINE: f32 = crate::layout_constraints::DIALOG_HEADLINE_SIZE;
     pub const TITLE_MEDIUM: f32 = 16.0;
     pub const BODY_MEDIUM: f32 = 14.0;
     pub const BODY_SMALL: f32 = 12.0;

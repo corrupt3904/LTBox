@@ -24,6 +24,8 @@ pub(crate) enum Message {
     StartupDisclaimerExit,
     AboutLicensesOpen,
     AboutLicensesClose,
+    HelpShow(String, String),
+    HelpClose,
     Navigate(View),
     ResumeBusyOperation,
     /// Open an external URL (About panel links) in the host's default

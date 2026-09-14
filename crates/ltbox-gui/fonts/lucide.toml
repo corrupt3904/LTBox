@@ -6,6 +6,7 @@
 module = "icon"
 
 [icons]
+help_context = "circle-question-mark"
 # Sidebar nav (18 px)
 nav_dashboard     = "layout-dashboard"
 nav_flash         = "zap"

@@ -149,6 +149,24 @@ impl App {
         if self.dual_usb_help_open {
             layers.push(self.dual_usb_help_dialog());
         }
+        if let Some((title, body)) = &self.help_dialog {
+            layers.push(m3_dialog(dialog_sections(
+                text(title.clone())
+                    .size(theme::text_size::DIALOG_HEADLINE)
+                    .line_height(32.0 / 24.0)
+                    .into(),
+                scrollable(text(body.clone()).size(theme::text_size::BODY_MEDIUM))
+                    .height(Length::Shrink)
+                    .into(),
+                row![
+                    Space::new().width(Length::Fill),
+                    m3_text_button(self.t("btn_close").to_string()).on_press(Message::HelpClose)
+                ]
+                .into(),
+                theme::DIALOG_WIDTH_MD,
+                false,
+            )));
+        }
         let toast_layer_count = usize::from(self.toast_msg.is_some());
         if self.toast_msg.is_some() {
             layers.push(self.toast_view());
@@ -215,7 +233,8 @@ impl App {
         }
 
         let header: Element<'_, Message> = text(self.t("startup_disclaimer_title").to_string())
-            .size(theme::text_size::TITLE_LARGE)
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0)
             .font(theme::emphasis::bold())
             .style(on_surface_style)
             .into();
@@ -1309,8 +1328,9 @@ impl App {
     pub(crate) fn view_placeholder(&self) -> Element<'_, Message> {
         column![
             text(self.t(self.current_view.label_key()).to_string())
-                .size(theme::text_size::TITLE_LARGE),
-            widget::rule::horizontal(1),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
+            widget::rule::horizontal(1).style(shell_rule_style),
             container(text("").size(14).style(muted_style))
                 .padding(48)
                 .width(Length::Fill)

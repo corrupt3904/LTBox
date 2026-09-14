@@ -1125,14 +1125,9 @@ fn bundled_locale_copy_fits_constrained_layout_slots() {
                 SlotKind::Header(header) => {
                     let (title_key, title) = localized_copy(&table, header.title);
                     let (action_key, action) = localized_copy(&table, header.action);
-                    let title_width = measure_text(
-                        locale,
-                        title,
-                        REGION_TARGET_POPUP_TITLE_SIZE,
-                        Weight::Normal,
-                        None,
-                    )
-                    .width;
+                    let title_width =
+                        measure_text(locale, title, DIALOG_HEADLINE_SIZE, Weight::Normal, None)
+                            .width;
                     let action_width = measure_text(
                         locale,
                         action,

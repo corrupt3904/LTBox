@@ -256,7 +256,10 @@ impl App {
         } else {
             tr_args!("reboot_confirm_title", target = short.as_str())
         };
-        let header: Element<'_, Message> = text(title).size(theme::text_size::TITLE_LARGE).into();
+        let header: Element<'_, Message> = text(title)
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0)
+            .into();
         let source = self.t(self.connection_label_key());
         let transition = format!("{source} \u{2192} {short}");
         let dash = "\u{2014}";
@@ -333,7 +336,9 @@ impl App {
     /// completes or times out.
     pub(crate) fn reboot_wait_popup(&self) -> Element<'_, Message> {
         let header: Element<'_, Message> = column![
-            text(self.t("reboot_wait_title").to_string()).size(theme::text_size::TITLE_LARGE),
+            text(self.t("reboot_wait_title").to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t("reboot_wait_body").to_string())
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style)

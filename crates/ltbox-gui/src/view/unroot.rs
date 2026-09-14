@@ -280,7 +280,7 @@ impl App {
                 backups,
             ]
             .spacing(20)
-            .padding(28)
+            .padding(PICKER_BODY_PADDING)
             .width(Length::Fill),
         )
         .height(Length::Fill)
@@ -294,7 +294,8 @@ impl App {
         let folder = dialog.folder.display().to_string();
         let header = column![
             text(self.t("unroot_backup_manifest_title").to_string())
-                .size(theme::text_size::TITLE_LARGE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(folder)
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style),

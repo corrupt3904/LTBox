@@ -269,7 +269,9 @@ impl App {
             field = field.push(dialog_field_error(error));
         }
         let header: Element<'_, Message> = column![
-            text(self.t(title_key).to_string()).size(theme::text_size::TITLE_LARGE),
+            text(self.t(title_key).to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t(subtitle_key).to_string())
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style),
@@ -329,7 +331,9 @@ impl App {
             field = field.push(dialog_field_error(error));
         }
         let header: Element<'_, Message> = column![
-            text(self.t("nightly_manual_title").to_string()).size(theme::text_size::TITLE_LARGE),
+            text(self.t("nightly_manual_title").to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t("nightly_manual_subtitle").to_string())
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style),
@@ -365,7 +369,8 @@ impl App {
             } else {
                 "root_release_title"
             }))
-            .size(theme::text_size::TITLE_LARGE)
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0)
             .style(on_surface_style),
             text(self.t(if self.root.step == 4 {
                 "root_nightly_subtitle"
@@ -377,7 +382,7 @@ impl App {
         ]
         .spacing(6)
         .into();
-        let mut body = column![].spacing(8);
+        let mut body = column![].spacing(2);
         if self.root.release_request.is_some() {
             body = body.push(
                 text(self.t("root_release_loading"))
@@ -412,39 +417,10 @@ impl App {
                         .get(..10)
                         .unwrap_or(&release.published_at)
                 );
-                body = body.push(focus_button::actionable(
-                    iced::widget::radio(label, index, self.root.release_selection, |index| {
-                        Message::Root(RootMsg::RootReleaseSelect(index))
-                    })
-                    .text_size(theme::text_size::BODY_MEDIUM)
-                    .size(20)
-                    .spacing(12)
-                    .style(|t: &Theme, status| {
-                        let p = pal_of(t);
-                        let selected = match status {
-                            iced::widget::radio::Status::Active { is_selected }
-                            | iced::widget::radio::Status::Hovered { is_selected } => is_selected,
-                        };
-                        iced::widget::radio::Style {
-                            background: with_alpha(
-                                p.primary,
-                                if matches!(status, iced::widget::radio::Status::Hovered { .. }) {
-                                    0.08
-                                } else {
-                                    0.0
-                                },
-                            )
-                            .into(),
-                            dot_color: p.primary,
-                            border_width: 2.0,
-                            border_color: if selected {
-                                p.primary
-                            } else {
-                                p.on_surface_variant
-                            },
-                            text_color: Some(p.on_surface),
-                        }
-                    }),
+                body = body.push(dialog_choice(
+                    label,
+                    None,
+                    self.root.release_selection == Some(index),
                     Some(Message::Root(RootMsg::RootReleaseSelect(index))),
                 ));
             }
@@ -508,7 +484,8 @@ impl App {
         }
         let header: Element<'_, Message> = column![
             text(self.t("root_kernel_version_manual_title").to_string())
-                .size(theme::text_size::TITLE_LARGE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t("root_kernel_version_manual_subtitle").to_string())
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style),
@@ -680,7 +657,7 @@ impl App {
                 .style(muted_style),
         ]
         .spacing(6)
-        .padding(28)
+        .padding(PICKER_BODY_PADDING)
         .width(Length::Fill);
         if self.root.provider == Some(Provider::KernelSULocal) {
             for (label, path, module) in [

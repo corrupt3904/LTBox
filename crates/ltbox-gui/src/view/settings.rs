@@ -87,17 +87,14 @@ fn settings_row_with_help(
     help: Option<String>,
     control: Element<'static, Message>,
 ) -> Element<'static, Message> {
-    let mut title = row![
-        text(label)
+    let title = row![
+        text(label.clone())
             .size(theme::text_size::BODY_MEDIUM)
             .line_height(20.0 / 14.0),
     ]
     .spacing(6.0)
     .align_y(iced::Alignment::Center);
-    if let Some(help) = help {
-        title = title.push(settings_help(help));
-    }
-    let mut copy = column![title].spacing(3.0).width(Length::Fill);
+    let mut copy = column![title].spacing(3.0).width(Length::Shrink);
     if !description.is_empty() {
         copy = copy.push(
             text(description)
@@ -107,21 +104,24 @@ fn settings_row_with_help(
         );
     }
 
-    // `Fill` height so the row centres inside the minimum-height spacer the
-    // stack below establishes. Left at Shrink it sat at the spacer's top edge,
-    // which showed up as a bigger gap under the last row of every card.
-    let contents = row![copy, control]
+    // Keep the spacer beside the content: a Stack would cap the text height.
+    let copy: Element<'static, Message> = match help {
+        Some(help) => row![copy, help_button(label, help)]
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        None => copy.into(),
+    };
+    // The group hugs its copy; only its outer slot absorbs spare width.
+    let contents = row![container(copy).width(Length::Fill), control]
         .spacing(20.0)
         .width(Length::Fill)
-        .height(Length::Fill)
         .align_y(iced::Alignment::Center);
-    container(iced::widget::stack![
-        Space::new()
-            .width(Length::Fill)
-            .height(Length::Fixed(SETTINGS_ROW_HEIGHT - 8.0)),
-        contents,
-    ])
-    .padding([4.0, 18.0])
+    container(
+        row![contents, Space::new().height(SETTINGS_ROW_HEIGHT - 24.0),]
+            .align_y(iced::Alignment::Center),
+    )
+    .padding([12.0, 18.0])
     .width(Length::Fill)
     .align_y(iced::alignment::Vertical::Center)
     .into()
@@ -244,33 +244,6 @@ fn settings_segmented_control(
         .into()
 }
 
-fn settings_help(tip: String) -> Element<'static, Message> {
-    widget::tooltip(
-        button(text("?").size(11.0))
-            .padding([2, 6])
-            .on_press(Message::ToastShow(tip.clone()))
-            .style(|t: &Theme, status| {
-                let p = pal_of(t);
-                button::Style {
-                    background: theme::state_layer_bg(status, p.on_surface_variant).map(Into::into),
-                    text_color: p.on_surface_variant,
-                    border: iced::Border {
-                        radius: theme::shape::SM.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }
-            }),
-        container(text(tip).size(11.0))
-            .padding([6, 10])
-            .max_width(280.0)
-            .style(|t: &Theme| theme::tooltip_style(t, theme::shape::SM)),
-        widget::tooltip::Position::Top,
-    )
-    .gap(6.0)
-    .into()
-}
-
 fn settings_action_style(
     t: &Theme,
     status: button::Status,
@@ -382,40 +355,14 @@ fn settings_text_action(label: String, message: Option<Message>) -> Element<'sta
 }
 
 fn settings_value_field(value: String) -> Element<'static, Message> {
-    let shown = value.clone();
-    let field = container(
-        text(shown)
-            .size(12.0)
-            .width(Length::Fill)
-            .wrapping(iced::widget::text::Wrapping::None),
+    crate::focus_button::read_only(
+        widget::text_input("", &value)
+            .on_input(|_| Message::Noop)
+            .size(12)
+            .padding([12, 12])
+            .width(SETTINGS_VALUE_FIELD_WIDTH)
+            .style(m3_text_input_style),
     )
-    .padding([0.0, 12.0])
-    .width(Length::Fixed(SETTINGS_VALUE_FIELD_WIDTH))
-    .height(Length::Fixed(SETTINGS_CONTROL_HEIGHT))
-    .align_y(iced::alignment::Vertical::Center)
-    .clip(true)
-    .style(|t: &Theme| container::Style {
-        border: iced::Border {
-            color: pal_of(t).outline,
-            width: 1.0,
-            radius: theme::shape::SM.into(),
-        },
-        ..Default::default()
-    });
-    widget::tooltip(
-        field,
-        container(
-            text(value)
-                .size(11.0)
-                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-        )
-        .padding([6, 10])
-        .max_width(360.0)
-        .style(|t: &Theme| theme::tooltip_style(t, theme::shape::XS)),
-        widget::tooltip::Position::Top,
-    )
-    .gap(6.0)
-    .into()
 }
 
 impl App {

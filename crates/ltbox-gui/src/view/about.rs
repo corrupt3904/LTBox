@@ -55,14 +55,8 @@ impl App {
 
         // Fine-print footer. The dialog behind the link opens with LTBox's own
         // license, so naming it out here as well would only repeat it.
-        let licenses_link = iced::widget::rich_text([iced::widget::span(
-            self.t("about_licenses_link").to_string(),
-        )
-        .size(12.0)
-        .color(self.pal().primary)
-        .underline(true)
-        .link(())])
-        .on_link_click(|()| Message::AboutLicensesOpen);
+        let licenses_link = m3_text_button(self.t("about_licenses_link").to_string())
+            .on_press(Message::AboutLicensesOpen);
 
         let col = column![app_icon, title, description, version, links, licenses_link]
             .spacing(14.0)

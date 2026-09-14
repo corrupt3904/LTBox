@@ -7,7 +7,7 @@ use iced::{Element, Length, Theme};
 use theme::with_alpha;
 
 const COUNTRY_LIST_HEIGHT: f32 = 300.0;
-const COUNTRY_ROW_HEIGHT: f32 = 44.0;
+const COUNTRY_ROW_HEIGHT: f32 = 56.0;
 const COUNTRY_FLAG_WIDTH: f32 = 20.0;
 const COUNTRY_FLAG_HEIGHT: f32 = 14.0;
 const COUNTRY_FLAG_RADIUS: f32 = 4.0;
@@ -27,6 +27,26 @@ fn country_matches_search(entry: &CountryEntry, query: &str) -> bool {
     query.is_empty()
         || entry.code.to_ascii_lowercase().contains(&query)
         || entry.name.to_ascii_lowercase().contains(&query)
+}
+
+fn country_choice_row<'a>(
+    copy: Element<'a, Message>,
+    selected: bool,
+    action: Option<Message>,
+) -> Element<'a, Message> {
+    button(
+        row![selection_radio(selected, action.is_some(), false), copy]
+            .spacing(11)
+            .align_y(iced::Alignment::Center)
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .height(COUNTRY_ROW_HEIGHT)
+    .width(Length::Fill)
+    .padding([0, 20])
+    .on_press_maybe(action)
+    .style(move |t, status| dialog_choice_style(t, status, selected))
+    .into()
 }
 
 /// Country-list row with a bundled, font-independent flag.
@@ -84,49 +104,20 @@ fn country_popup_row<'a>(
                     color: Some(foreground(t)),
                 }),
         );
-    if selected {
-        contents = contents.push(lucide_icon(icon::mark_check(), 16.0, |t: &Theme| {
-            pal_of(t).primary
-        }));
-    }
 
-    // A button lays its content out at its natural height and pins it to the
-    // top, so the row has to claim the button's fixed height before centring
-    // inside it.
-    let mut row_button = button(contents.width(Length::Fill).height(Length::Fill))
-        .height(Length::Fixed(COUNTRY_ROW_HEIGHT))
-        .width(Length::Fill)
-        .padding([0, 20])
-        .style(move |t: &Theme, status| {
-            let p = pal_of(t);
-            let state_alpha = if disabled {
-                0.0
-            } else {
-                theme::state_alpha(status)
-            };
-            button::Style {
-                background: if selected {
-                    Some(p.secondary_container.into())
-                } else if state_alpha > 0.0 {
-                    Some(with_alpha(p.on_surface, state_alpha).into())
-                } else {
-                    None
-                },
-                text_color: foreground(t),
-                ..Default::default()
-            }
-        });
-    if !disabled {
-        row_button = row_button.on_press(Message::SelectCountry(code.to_string()));
-    }
-    row_button.into()
+    country_choice_row(
+        contents.into(),
+        selected,
+        (!disabled).then(|| Message::SelectCountry(code.to_string())),
+    )
 }
 
 impl App {
     pub(crate) fn software_fix_confirm_dialog(&self) -> Element<'_, Message> {
         m3_dialog(popup_sections(
             text(self.t("software_fix_confirm_title").to_string())
-                .size(theme::text_size::TITLE_LARGE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t("software_fix_elevation_hint").to_string())
                 .size(theme::text_size::BODY_MEDIUM)
                 .style(muted_style),
@@ -301,7 +292,9 @@ impl App {
         };
         let content = popup_sections(
             column![
-                text(self.t("dual_usb_help_title").to_string()).size(theme::text_size::TITLE_LARGE),
+                text(self.t("dual_usb_help_title").to_string())
+                    .size(theme::text_size::DIALOG_HEADLINE)
+                    .line_height(32.0 / 24.0),
                 text(subtitle)
                     .size(theme::text_size::BODY_SMALL)
                     .style(muted_style),
@@ -372,7 +365,7 @@ impl App {
                 .size(theme::text_size::TITLE_MEDIUM)
                 .font(theme::emphasis::bold()),
             licenses,
-            widget::rule::horizontal(1),
+            widget::rule::horizontal(1).style(shell_rule_style),
             text(self.t("about_licenses_section_credits").to_string())
                 .size(theme::text_size::TITLE_MEDIUM)
                 .font(theme::emphasis::bold()),
@@ -387,7 +380,9 @@ impl App {
             row![Space::new().width(Length::Fill), close].align_y(iced::Alignment::Center);
 
         let content = popup_sections(
-            text(self.t("about_licenses_title").to_string()).size(theme::text_size::TITLE_LARGE),
+            text(self.t("about_licenses_title").to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             scrollable(body)
                 .style(m3_scrollable_style)
                 .height(Length::Fixed(420.0))
@@ -413,8 +408,9 @@ impl App {
         }
 
         let upgrade = package_upgrade_command(source);
-        let title =
-            text(self.t("update_dialog_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("update_dialog_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let version = text(
             // Tags carry a leading `v`; the string already says "version",
             // so trim it rather than rendering "Version v3.3.0".
@@ -479,8 +475,9 @@ impl App {
         &self,
         release: &ltbox_core::github::StableRelease,
     ) -> Element<'_, Message> {
-        let title =
-            text(self.t("update_dialog_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("update_dialog_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let version = text(
             self.t("update_dialog_version")
                 .replace("{version}", release.tag.trim_start_matches('v')),
@@ -601,8 +598,9 @@ impl App {
         let Some((serial, state)) = self.device_info_popup.clone() else {
             return container(text("")).into();
         };
-        let title =
-            text(self.t("device_info_popup_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("device_info_popup_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         // Copy-icon button — only enabled once the upstream payload is
         // cached; clicking copies the unmodified `data` JSON to the
         // clipboard and surfaces a toast.
@@ -611,48 +609,12 @@ impl App {
             .info_cache
             .get(&serial)
             .map(|i| i.data_pretty.clone());
-        let copy_glyph = text("⧉").size(16);
-        let copy_btn = if let Some(payload) = copy_payload {
-            button(container(copy_glyph).padding([2, 6]))
-                .on_press(Message::CopyToClipboard(payload))
-                .padding(0)
-                .style(|t: &Theme, status| {
-                    let p = pal_of(t);
-                    // `surface_container` base + M3 state layer on hover / press.
-                    let bg = theme::mix_color(
-                        p.surface_container,
-                        p.on_surface,
-                        theme::state_alpha(status),
-                    );
-                    button::Style {
-                        background: Some(bg.into()),
-                        text_color: p.on_surface,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                })
-        } else {
-            // Same shape, no on_press — keeps the header layout stable
-            // during the loading / error states without leaving an
-            // active click target.
-            button(container(copy_glyph).padding([2, 6]))
-                .padding(0)
-                .style(|t: &Theme, _s| {
-                    let p = pal_of(t);
-                    button::Style {
-                        background: Some(p.surface_container.into()),
-                        text_color: p.on_surface_variant,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                })
-        };
+        let copy_btn = iced::widget::tooltip(
+            m3_icon_button(icon::action_copy(), 18.0, m3_standard_icon_button_style)
+                .on_press_maybe(copy_payload.map(Message::CopyToClipboard)),
+            text(self.t("qfil_popup_copy").to_string()),
+            iced::widget::tooltip::Position::Bottom,
+        );
         let header = iced::widget::row![title, Space::new().width(Length::Fill), copy_btn]
             .align_y(iced::Alignment::Center);
         let serial_line = text(format!("{}: {serial}", self.t("device_info_popup_serial")))
@@ -708,7 +670,9 @@ impl App {
         let Some((_serial, _firmware_id, state)) = self.ota_popup.clone() else {
             return container(text("")).into();
         };
-        let title = text(self.t("ota_popup_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("ota_popup_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let header = iced::widget::row![title, Space::new().width(Length::Fill)]
             .align_y(iced::Alignment::Center);
 
@@ -783,9 +747,9 @@ impl App {
                 scrollable(
                     column![
                         from_to_row,
-                        widget::rule::horizontal(1),
+                        widget::rule::horizontal(1).style(shell_rule_style),
                         meta_row,
-                        widget::rule::horizontal(1),
+                        widget::rule::horizontal(1).style(shell_rule_style),
                         changelog_block,
                     ]
                     .spacing(12)
@@ -833,8 +797,9 @@ impl App {
         let Some((_serial, state)) = self.qfil_popup.clone() else {
             return container(text("")).into();
         };
-        let title =
-            text(self.t("qfil_popup_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("qfil_popup_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let header = row![title, Space::new().width(Length::Fill)].align_y(iced::Alignment::Center);
 
         let placeholder = |key: &str| -> Element<'_, Message> {
@@ -887,7 +852,7 @@ impl App {
                         .on_press(Message::CopyToClipboard(pw.clone())),
                 ]
                 .align_y(iced::Alignment::Center);
-                rows = rows.push(widget::rule::horizontal(1));
+                rows = rows.push(widget::rule::horizontal(1).style(shell_rule_style));
                 rows = rows.push(pw_row);
                 rows.into()
             }
@@ -974,19 +939,8 @@ impl App {
             }
         });
 
-        let copy_btn = m3_icon_button(icon::action_copy(), 16.0, |t: &Theme, status| {
-            let p = pal_of(t);
-            button::Style {
-                background: theme::state_layer_bg(status, p.on_surface).map(Into::into),
-                text_color: p.on_surface_variant,
-                border: iced::Border {
-                    radius: theme::shape::SM.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        })
-        .on_press(Message::CopyToClipboard(rendered));
+        let copy_btn = m3_icon_button(icon::action_copy(), 16.0, m3_standard_icon_button_style)
+            .on_press(Message::CopyToClipboard(rendered));
 
         let copy_btn = widget::tooltip(
             copy_btn,
@@ -1023,8 +977,9 @@ impl App {
         };
         let slot = active_slot_suffix(Some(&self.device.slot));
 
-        let title =
-            text(self.t("rollback_popup_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("rollback_popup_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let desc = text(self.t("rollback_popup_desc").to_string())
             .size(theme::text_size::BODY_MEDIUM)
             .style(muted_style)
@@ -1077,8 +1032,9 @@ impl App {
             return container(text("")).into();
         };
 
-        let title =
-            text(self.t("rollback_popup_title").to_string()).size(theme::text_size::TITLE_LARGE);
+        let title = text(self.t("rollback_popup_title").to_string())
+            .size(theme::text_size::DIALOG_HEADLINE)
+            .line_height(32.0 / 24.0);
         let desc = text(self.t("rollback_manual_desc").to_string())
             .size(theme::text_size::BODY_MEDIUM)
             .style(muted_style)
@@ -1234,7 +1190,8 @@ impl App {
         let valid = !buf.trim().is_empty();
         let header = column![
             text(self.t("flash_serial_prompt_title").to_string())
-                .size(theme::text_size::TITLE_LARGE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             text(self.t("flash_serial_prompt_subtitle").to_string())
                 .size(theme::text_size::BODY_SMALL)
                 .style(muted_style),
@@ -1292,40 +1249,14 @@ impl App {
             let no_change_selected = self.country_popup_draft.is_skipped()
                 || (matches!(self.country_popup_draft, CountryAction::Unset)
                     && !self.wf_config.wipe);
-            let mut contents = row![
+            list = list.push(country_choice_row(
                 text(self.t("popup_country_do_not_change").to_string())
                     .size(theme::text_size::BODY_MEDIUM)
-                    .width(Length::Fill),
-            ]
-            .align_y(iced::Alignment::Center)
-            .width(Length::Fill);
-            if no_change_selected {
-                contents = contents.push(lucide_icon(icon::mark_check(), 16.0, |t: &Theme| {
-                    pal_of(t).primary
-                }));
-            }
-            list = list.push(
-                button(contents.height(Length::Fill))
-                    .on_press(Message::SkipCountryPatch)
-                    .height(Length::Fixed(COUNTRY_ROW_HEIGHT))
                     .width(Length::Fill)
-                    .padding([0, 20])
-                    .style(move |t: &Theme, status| {
-                        let p = pal_of(t);
-                        let alpha = theme::state_alpha(status);
-                        button::Style {
-                            background: if no_change_selected {
-                                Some(p.secondary_container.into())
-                            } else if alpha > 0.0 {
-                                Some(with_alpha(p.on_surface, alpha).into())
-                            } else {
-                                None
-                            },
-                            text_color: p.on_surface,
-                            ..Default::default()
-                        }
-                    }),
-            );
+                    .into(),
+                no_change_selected,
+                Some(Message::SkipCountryPatch),
+            ));
             has_row = true;
         }
 
@@ -1363,7 +1294,8 @@ impl App {
         let header = container(
             column![
                 text(self.t("adv_country_title").to_string())
-                    .size(theme::text_size::TITLE_MEDIUM)
+                    .size(theme::text_size::DIALOG_HEADLINE)
+                    .line_height(32.0 / 24.0)
                     .font(theme::emphasis::medium()),
                 text(self.t("adv_country_subtitle").to_string())
                     .size(theme::text_size::BODY_SMALL)
@@ -1375,7 +1307,7 @@ impl App {
             .width(Length::Fill),
         )
         .padding(iced::Padding {
-            top: 18.0,
+            top: 24.0,
             right: 20.0,
             bottom: 10.0,
             left: 20.0,
@@ -1435,40 +1367,18 @@ impl App {
         for target in [DeviceRegion::Prc, DeviceRegion::Row] {
             let is_selected = selected == Some(target);
             let label = self.t(target.label_key()).to_string();
-            list = list.push(
-                button(text(label).size(theme::text_size::BODY_MEDIUM))
-                    .on_press(Message::SelectRegionTarget(target))
-                    .padding([6, 14])
-                    .width(Length::Fill)
-                    .style(move |t: &Theme, status| {
-                        let p = pal_of(t);
-                        button::Style {
-                            background: if is_selected {
-                                Some(
-                                    theme::mix_color(
-                                        p.primary,
-                                        p.on_primary,
-                                        theme::state_alpha(status),
-                                    )
-                                    .into(),
-                                )
-                            } else {
-                                theme::state_layer_bg(status, p.on_surface).map(Into::into)
-                            },
-                            text_color: if is_selected {
-                                p.on_primary
-                            } else {
-                                p.on_surface
-                            },
-                            ..Default::default()
-                        }
-                    }),
-            );
+            list = list.push(dialog_choice(
+                label,
+                None,
+                is_selected,
+                Some(Message::SelectRegionTarget(target)),
+            ));
         }
 
         let popup_content = popup_sections(
             text(self.t("popup_select_region_target").to_string())
-                .size(REGION_TARGET_POPUP_TITLE_SIZE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             list,
             row![
                 Space::new().width(Length::Fill),
@@ -1602,7 +1512,8 @@ impl App {
 
         let popup_content = popup_sections(
             text(self.t("flash_confirm_edit_title").to_string())
-                .size(theme::text_size::TITLE_LARGE),
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             list,
             row![
                 Space::new().width(Length::Fill),
@@ -1679,7 +1590,9 @@ impl App {
             m3_outlined_button(self.t(action_label).to_string())
         };
         let popup_content = popup_sections(
-            text(self.t(title_key).to_string()).size(16),
+            text(self.t(title_key).to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             details,
             row![
                 Space::new().width(Length::Fill),
@@ -1696,52 +1609,26 @@ impl App {
             let label = self.t(region.label_key()).to_string();
             let desc = self.t(desc_key).to_string();
             let selected = self.sysupdate.rescue_region == Some(region);
-            button(
-                column![
-                    text(label)
-                        .size(theme::text_size::BODY_MEDIUM)
-                        .style(on_surface_style),
-                    text(desc).size(12).style(muted_style),
-                ]
-                .spacing(4),
+            dialog_choice(
+                label,
+                Some(desc),
+                selected,
+                Some(Message::Sys(SysMsg::SysRescueRegion(region))),
             )
-            .on_press(Message::Sys(SysMsg::SysRescueRegion(region)))
-            .padding([10, 16])
-            .width(Length::Fill)
-            .style(move |t: &Theme, status| {
-                let p = pal_of(t);
-                let background = if selected {
-                    Some(
-                        theme::mix_color(
-                            p.primary_container,
-                            p.on_primary_container,
-                            theme::state_alpha(status),
-                        )
-                        .into(),
-                    )
-                } else {
-                    theme::state_layer_bg(status, p.on_surface).map(Into::into)
-                };
-                button::Style {
-                    background,
-                    text_color: p.on_surface,
-                    border: iced::Border {
-                        color: if selected { p.primary } else { p.outline },
-                        width: 1.0,
-                        radius: theme::shape::SM.into(),
-                    },
-                    ..Default::default()
-                }
-            })
         };
         let popup_content = popup_sections(
-            text(self.t("rescue_region_popup_title").to_string()).size(16),
+            text(self.t("rescue_region_popup_title").to_string())
+                .size(theme::text_size::DIALOG_HEADLINE)
+                .line_height(32.0 / 24.0),
             column![
                 text(self.t("rescue_region_popup_subtitle").to_string())
                     .size(12)
                     .style(muted_style),
-                mk_option(RescueRegion::Prc, "rescue_region_prc_desc"),
-                mk_option(RescueRegion::Row, "rescue_region_row_desc"),
+                column![
+                    mk_option(RescueRegion::Prc, "rescue_region_prc_desc"),
+                    mk_option(RescueRegion::Row, "rescue_region_row_desc"),
+                ]
+                .spacing(2),
             ]
             .spacing(10),
             row![
@@ -1772,12 +1659,14 @@ impl App {
             .style(m3_log_text_editor_style);
         let body = column![
             row![
-                text(self.t("log_popup_title").to_string()).size(theme::text_size::TITLE_LARGE),
+                text(self.t("log_popup_title").to_string())
+                    .size(theme::text_size::DIALOG_HEADLINE)
+                    .line_height(32.0 / 24.0),
                 Space::new().width(Length::Fill),
             ]
             .spacing(8)
             .align_y(iced::Alignment::Center),
-            widget::rule::horizontal(1),
+            widget::rule::horizontal(1).style(shell_rule_style),
             m3_log_text_field(self.t("dash_log").to_string(), editor.into()),
         ]
         .spacing(12)
@@ -1822,6 +1711,32 @@ const _: () = {
 #[cfg(test)]
 mod country_popup_tests {
     use super::*;
+
+    #[test]
+    fn unselected_country_rows_share_the_dialog_surface() {
+        for theme in [Theme::Light, Theme::Dark] {
+            assert!(
+                dialog_choice_style(&theme, button::Status::Active, false)
+                    .background
+                    .is_none()
+            );
+            assert!(
+                dialog_choice_style(&theme, button::Status::Disabled, false)
+                    .background
+                    .is_none()
+            );
+            assert!(
+                dialog_choice_style(&theme, button::Status::Hovered, false)
+                    .background
+                    .is_some()
+            );
+            assert!(
+                dialog_choice_style(&theme, button::Status::Active, true)
+                    .background
+                    .is_some()
+            );
+        }
+    }
 
     #[test]
     fn country_search_matches_name_and_code_case_insensitively() {

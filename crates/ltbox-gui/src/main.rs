@@ -1800,6 +1800,7 @@ struct App {
     startup_disclaimer_checked: bool,
     /// Session-only open state for the About screen's license inventory.
     about_licenses_open: bool,
+    help_dialog: Option<(String, String)>,
     root: RootWizard,
     flash: FlashWizard,
     sysupdate: SysUpdateWizard,
@@ -2053,6 +2054,7 @@ impl Default for App {
             startup_disclaimer_open: true,
             startup_disclaimer_checked: false,
             about_licenses_open: false,
+            help_dialog: None,
             root: RootWizard::default(),
             flash: FlashWizard::default(),
             sysupdate: SysUpdateWizard::default(),

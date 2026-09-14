@@ -327,70 +327,19 @@ impl App {
         let value = |value: String| -> Element<'_, Message> {
             text(value)
                 .size(theme::text_size::BODY_MEDIUM)
+                .line_height(iced::widget::text::LineHeight::Absolute(20.0.into()))
                 .font(theme::emphasis::medium())
                 .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
                 .into()
         };
 
-        let rollback_help_key = if matches!(
-            self.device.model.to_ascii_uppercase().as_str(),
-            "TB321FU" | "TB520FU"
-        ) {
-            "dash_rollback_help_fastboot"
-        } else {
-            "dash_rollback_help_edl"
-        };
-        // With no device attached the model is unknown, so the branch above
-        // would present the EDL wording as if it had been determined. Show the
-        // badge without a tooltip rather than answering for a device that is
-        // not there.
-        let rollback_help_text: Option<String> = (self.device.connection != ConnectionStatus::None)
-            .then(|| self.t(rollback_help_key).to_string());
-        let rollback_help = iced::widget::tooltip(
-            container(text("?").size(11.0).style(muted_style))
-                .padding([2, 6])
-                .style(|t: &Theme| {
-                    let p = pal_of(t);
-                    container::Style {
-                        background: Some(with_alpha(p.on_surface_variant, 0.10).into()),
-                        border: iced::Border {
-                            radius: theme::shape::SM.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }
-                }),
-            container(text(rollback_help_text.clone().unwrap_or_default()).size(11.0))
-                .padding(if rollback_help_text.is_some() {
-                    iced::Padding::from([6, 10])
-                } else {
-                    iced::Padding::ZERO
-                })
-                .max_width(320.0)
-                .style(move |t: &Theme| {
-                    if rollback_help_text.is_some() {
-                        theme::tooltip_style(t, theme::shape::SM)
-                    } else {
-                        iced::widget::container::Style::default()
-                    }
-                }),
-            iced::widget::tooltip::Position::Right,
-        );
-        let rollback_label: Element<'_, Message> = row![
-            text(self.t("device_arb").to_string())
-                .size(theme::text_size::LABEL_SMALL)
-                .style(muted_style),
-            rollback_help,
-        ]
-        .spacing(6.0)
-        .align_y(iced::Alignment::Center)
-        .into();
+        let rollback_label = label("device_arb");
 
         let rollback_value: Element<'_, Message> = if self.device.rollback_floors.is_some() {
             iced::widget::tooltip(
                 button(value(arb.to_string()))
                     .on_press(Message::RollbackDetailOpen)
-                    .padding([4, 0])
+                    .padding(0)
                     .width(Length::Fill)
                     .style(dash_clickable_btn_style),
                 container(text(self.t("rollback_open_tip").to_string()).size(11.0))
@@ -400,7 +349,7 @@ impl App {
             )
             .into()
         } else {
-            container(value(arb.to_string())).padding([4, 0]).into()
+            value(arb.to_string())
         };
         let actions = dashboard_action_availability(
             &self.device.serial,

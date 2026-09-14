@@ -183,6 +183,12 @@ impl App {
             Message::StartupDisclaimerExit => {
                 return self.update_window(WindowMsg::WindowClose);
             }
+            Message::HelpShow(title, body) => {
+                self.help_dialog = Some((title, body));
+            }
+            Message::HelpClose => {
+                self.help_dialog = None;
+            }
             Message::AboutLicensesOpen => {
                 self.about_licenses_open = true;
             }
@@ -1390,6 +1396,19 @@ impl App {
 #[cfg(test)]
 mod feedback_tests {
     use super::*;
+
+    #[test]
+    fn help_remains_open_until_explicitly_closed() {
+        let mut app = App::default();
+        let _ = app.update(Message::HelpShow("title".into(), "explanation".into()));
+        let _ = app.update(Message::ToastClear(0));
+        assert_eq!(
+            app.help_dialog.as_ref().map(|(_, body)| body.as_str()),
+            Some("explanation")
+        );
+        let _ = app.update(Message::HelpClose);
+        assert!(app.help_dialog.is_none());
+    }
 
     #[test]
     fn expired_toast_cannot_clear_its_replacement() {

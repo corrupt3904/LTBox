@@ -486,12 +486,7 @@ impl App {
 
         let mut content = column![path_row,]
             .spacing(6)
-            .padding(iced::Padding {
-                top: 18.0,
-                right: 28.0,
-                bottom: 28.0,
-                left: 28.0,
-            })
+            .padding(PICKER_BODY_PADDING)
             .width(Length::Fill)
             .align_x(iced::Alignment::Start);
 
@@ -571,9 +566,7 @@ impl App {
             selected.then_some(Message::Flash(FlashMsg::FlashClearBootloader)),
         );
 
-        let verdict_key = if !selected {
-            "flash_bootloader_empty"
-        } else if analyzing {
+        let verdict_key = if analyzing {
             "flash_bootloader_analyzing"
         } else if self.flash.uses_gbl() {
             match self.flash.user_abl_efisp_load {
@@ -606,28 +599,21 @@ impl App {
                 }),
             });
 
-        let mut content = column![
-            picker_row,
-            verdict,
-            self.recent_file_chips(
-                &["elf"],
-                |path| Message::Flash(FlashMsg::FlashBootloaderChosen(Some(path))),
-                "picker_recents"
-            )
-        ]
-        .spacing(10.0)
-        .width(Length::Fill)
-        .align_x(iced::Alignment::Start);
-        if self.flash.uses_gbl() && !selected && !self.flash.bootloader_can_next() {
-            content = content.push(
-                text(self.t("err_abl_efisp_undetermined").to_string())
-                    .size(13.0)
-                    .center(),
-            );
+        let mut content = column![picker_row]
+            .spacing(10.0)
+            .width(Length::Fill)
+            .align_x(iced::Alignment::Start);
+        if selected {
+            content = content.push(verdict);
         }
+        let content = content.push(self.recent_file_chips(
+            &["elf"],
+            |path| Message::Flash(FlashMsg::FlashBootloaderChosen(Some(path))),
+            "picker_recents",
+        ));
 
         container(content)
-            .padding(28.0)
+            .padding(PICKER_BODY_PADDING)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)

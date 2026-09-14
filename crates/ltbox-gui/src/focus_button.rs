@@ -61,6 +61,7 @@ pub fn actionable<'a>(
         inner: inner.into(),
         action,
         inert: false,
+        read_only: false,
         cycle: None,
     })
 }
@@ -71,6 +72,7 @@ pub fn scope(inner: Element<'_, Message>, enabled: bool) -> Element<'_, Message>
         inner,
         action: None,
         inert: !enabled,
+        read_only: false,
         cycle: None,
     })
 }
@@ -108,7 +110,47 @@ struct Interaction<'a> {
     inner: Element<'a, Message>,
     action: Option<Message>,
     inert: bool,
+    read_only: bool,
     cycle: Option<(String, Message)>,
+}
+
+/// Keep native cursor, drag selection and copy while rejecting edit events.
+pub fn read_only<'a>(inner: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    Element::new(Interaction {
+        inner: inner.into(),
+        action: None,
+        inert: false,
+        read_only: true,
+        cycle: None,
+    })
+}
+
+fn read_only_blocks(event: &Event) -> bool {
+    match event {
+        Event::InputMethod(_) => true,
+        Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            !read_only_key_allowed(key, *modifiers)
+        }
+        _ => false,
+    }
+}
+
+fn read_only_key_allowed(key: &keyboard::Key, modifiers: keyboard::Modifiers) -> bool {
+    matches!(
+        key,
+        keyboard::Key::Named(
+            keyboard::key::Named::ArrowLeft
+                | keyboard::key::Named::ArrowRight
+                | keyboard::key::Named::Home
+                | keyboard::key::Named::End
+                | keyboard::key::Named::Tab
+                | keyboard::key::Named::Escape
+                | keyboard::key::Named::Shift
+                | keyboard::key::Named::Control
+                | keyboard::key::Named::Alt
+                | keyboard::key::Named::Super
+        )
+    ) || (modifiers.command() && matches!(key.as_ref(), keyboard::Key::Character("a" | "c")))
 }
 
 /// Native pick lists retain mouse menus; arrows cycle choices on the keyboard.
@@ -132,6 +174,7 @@ pub fn cycle<'a, T: PartialEq + Clone>(
         inner: inner.into(),
         action: Some(next),
         inert: false,
+        read_only: false,
         cycle: Some((id, previous)),
     })
 }
@@ -316,6 +359,9 @@ impl Widget<Message, Theme, Renderer> for Interaction<'_> {
         viewport: &Rectangle,
     ) {
         if self.inert && matches!(event, Event::Keyboard(_)) {
+            return;
+        }
+        if self.read_only && read_only_blocks(event) {
             return;
         }
         let state = tree.state.downcast_mut::<State>();
@@ -562,5 +608,43 @@ mod tests {
         state.unfocus();
         state.focus();
         assert!(!state.release(keyboard::key::Named::Space));
+    }
+}
+
+#[cfg(test)]
+mod read_only_tests {
+    use super::*;
+
+    #[test]
+    fn paths_allow_navigation_and_copy_but_not_edits() {
+        use keyboard::key::Named;
+        for key in [Named::ArrowLeft, Named::ArrowRight, Named::Home, Named::End] {
+            assert!(read_only_key_allowed(
+                &keyboard::Key::Named(key),
+                keyboard::Modifiers::SHIFT
+            ));
+        }
+        for key in [Named::Backspace, Named::Delete, Named::Enter] {
+            assert!(!read_only_key_allowed(
+                &keyboard::Key::Named(key),
+                keyboard::Modifiers::empty()
+            ));
+        }
+        for value in ["a", "c"] {
+            assert!(read_only_key_allowed(
+                &keyboard::Key::Character(value.into()),
+                keyboard::Modifiers::COMMAND
+            ));
+        }
+        for value in ["x", "v", "z", "path"] {
+            assert!(!read_only_key_allowed(
+                &keyboard::Key::Character(value.into()),
+                keyboard::Modifiers::COMMAND
+            ));
+            assert!(!read_only_key_allowed(
+                &keyboard::Key::Character(value.into()),
+                keyboard::Modifiers::empty()
+            ));
+        }
     }
 }
