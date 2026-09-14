@@ -1259,3 +1259,22 @@ fn compact_flash_and_root_step_labels_fit_default_content_width() {
         }
     }
 }
+
+#[test]
+fn timeout_and_capacity_units_follow_the_selected_locale() {
+    for (locale, seconds, gigabytes) in [
+        ("en", "30 s", "16 GB"),
+        ("ko", "30초", "16 GB"),
+        ("ja", "30秒", "16 GB"),
+        ("zh", "30 秒", "16 GB"),
+        ("ru", "30 с", "16 ГБ"),
+    ] {
+        let table = load_locale(locale);
+        let timeout = table["err_active_slot_detect_failed"]
+            .replace("{timeout}", "30")
+            .replace("{detail}", "");
+        assert!(timeout.contains(seconds), "{locale}: {timeout}");
+        assert!(!timeout.contains("30s"));
+        assert_eq!(table["unit_gigabytes"].replace("{value}", "16"), gigabytes);
+    }
+}

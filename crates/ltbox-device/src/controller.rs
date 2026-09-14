@@ -136,7 +136,7 @@ pub fn poll_active_slot(
     }
     Err(ControllerError::SlotResolve(tr_args!(
         "err_active_slot_detect_failed",
-        timeout = format!("{timeout:?}"),
+        timeout = timeout.as_secs_f64().to_string(),
         detail = detail
     )))
 }

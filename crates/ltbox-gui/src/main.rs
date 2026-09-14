@@ -1262,13 +1262,13 @@ fn format_bytes_auto(bytes: u64) -> String {
     const GB: f64 = MB * 1024.0;
     let b = bytes as f64;
     if b >= GB {
-        format!("{:.2} GB", b / GB)
+        ltbox_core::tr_args!("unit_gigabytes", value = format!("{:.2}", b / GB))
     } else if b >= MB {
-        format!("{:.2} MB", b / MB)
+        ltbox_core::tr_args!("unit_megabytes", value = format!("{:.2}", b / MB))
     } else if b >= KB {
-        format!("{:.2} KB", b / KB)
+        ltbox_core::tr_args!("unit_kilobytes", value = format!("{:.2}", b / KB))
     } else {
-        format!("{bytes} B")
+        ltbox_core::tr_args!("unit_bytes", value = bytes.to_string())
     }
 }
 
@@ -1369,7 +1369,10 @@ fn parse_hwboardid_ram_storage(hwboardid: &str) -> (String, String) {
             && ram.chars().all(|c| c.is_ascii_digit())
             && storage.chars().all(|c| c.is_ascii_digit())
         {
-            return (format!("{ram} GB"), format!("{storage} GB"));
+            return (
+                ltbox_core::tr_args!("unit_gigabytes", value = ram.to_string()),
+                ltbox_core::tr_args!("unit_gigabytes", value = storage.to_string()),
+            );
         }
     }
     (String::new(), String::new())
@@ -5495,8 +5498,8 @@ mod tests {
     fn error_summary_keeps_diagnosis_without_followup_or_nested_details() {
         for (full, expected) in [
             (
-                "30s 이내에 활성 슬롯을 감지하지 못했습니다. Android나 복구 모드에서 다시 시도하세요.",
-                "30s 이내에 활성 슬롯을 감지하지 못했습니다.",
+                "30초 이내에 활성 슬롯을 감지하지 못했습니다. Android나 복구 모드에서 다시 시도하세요.",
+                "30초 이내에 활성 슬롯을 감지하지 못했습니다.",
             ),
             (
                 "Unable to detect the active slot. Connect using ADB and retry.",
