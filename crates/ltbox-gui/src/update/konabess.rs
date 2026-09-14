@@ -106,6 +106,11 @@ impl App {
             KonaBessMsg::KonaBessNext => {
                 match self.konabess.step {
                     0 => {
+                        // A queued Next may arrive after a disconnect. Refuse before
+                        // reserving the operation or opening the progress dialog.
+                        if !self.device_reachable() {
+                            return Task::none();
+                        }
                         let selected = self.konabess.loader_path.clone();
                         match self.validate_loader_path(&selected) {
                             Ok(loader) if self.loader_fits_model(std::path::Path::new(&loader)) => {
@@ -602,11 +607,51 @@ mod tests {
     }
 
     #[test]
+    fn loader_next_without_usable_connection_never_starts_inspection() {
+        let root = tempfile::tempdir().unwrap();
+        let loader = root.path().join("loader.melf");
+        std::fs::write(&loader, []).unwrap();
+        for connection in [
+            ConnectionStatus::None,
+            ConnectionStatus::AdbUnauthorized,
+            ConnectionStatus::AdbSideload,
+            ConnectionStatus::AdbServerBlocking,
+        ] {
+            let mut app = App {
+                device: DeviceSnapshot {
+                    model: "TB320FC".into(),
+                    connection,
+                    ..DeviceSnapshot::default()
+                },
+                konabess: KonaBessWizard {
+                    loader_path: Some(loader.display().to_string()),
+                    ..KonaBessWizard::default()
+                },
+                ..App::default()
+            };
+            assert!(
+                app.konabess.can_next(),
+                "valid loader alone is insufficient"
+            );
+            let task = app.update_konabess(KonaBessMsg::KonaBessNext);
+            assert_eq!(task.units(), 0, "{connection:?}");
+            assert!(!app.operation.is_running());
+            assert_eq!(app.konabess.step, 0);
+            assert!(app.konabess.prepared.is_none());
+        }
+    }
+
+    #[test]
     fn loader_next_starts_export_free_inspection_before_table_step() {
         let root = tempfile::tempdir().unwrap();
         let loader = root.path().join("loader.melf");
         std::fs::write(&loader, []).unwrap();
         let mut app = App {
+            device: DeviceSnapshot {
+                connection: ConnectionStatus::Edl,
+                model: "TB320FC".into(),
+                ..DeviceSnapshot::default()
+            },
             konabess: KonaBessWizard {
                 loader_path: Some(loader.display().to_string()),
                 ..KonaBessWizard::default()

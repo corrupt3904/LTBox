@@ -51,7 +51,11 @@ impl App {
         let nav: Element<'_, Message> = if konabess_nav_visible(self.konabess.step) {
             let is_confirm = self.konabess.step == 2;
             let unsupported = (!ltbox_core::model::capabilities(&self.device.model).konabess)
-                .then(|| tr_args!("model_unsupported", model = "TB376FC / TB390FU"));
+                .then(|| tr_args!("model_unsupported", model = "TB376FC / TB390FU"))
+                .or_else(|| {
+                    (self.konabess.step == 0 && !self.device_reachable())
+                        .then(|| self.t("err_no_device_connected").to_string())
+                });
             let label = if is_confirm {
                 self.t("btn_start")
             } else {
@@ -61,6 +65,7 @@ impl App {
                 wizard_nav_cancel_generic_with_disabled_next_tooltip(
                     label,
                     self.konabess.can_next()
+                        && (self.konabess.step != 0 || self.device_reachable())
                         && !self.operation.is_running()
                         && ltbox_core::model::capabilities(&self.device.model).konabess,
                     unsupported,
@@ -73,6 +78,7 @@ impl App {
                     self.konabess.step > 0,
                     label,
                     self.konabess.can_next()
+                        && (self.konabess.step != 0 || self.device_reachable())
                         && !self.operation.is_running()
                         && ltbox_core::model::capabilities(&self.device.model).konabess,
                     unsupported,
