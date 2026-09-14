@@ -1,5 +1,5 @@
 //! Root worker: build patched root artifacts (Magisk / KernelSU
-//! / APatch / GKI), flash them over EDL, and stage the manager APK.
+//! / APatch / SKRoot Lite / GKI), flash them over EDL, and stage the manager APK.
 //! Extracted from the update_root handler.
 
 use crate::backup::{create_backup_dir, write_backup_manifest};
@@ -387,7 +387,8 @@ pub(crate) fn root_worker(
             // may skip AVB + vbmeta.
             let uses_gbl;
             // Whether the stock vbmeta ended up in the backup folder, so the
-            // manifest can tell Unroot which partitions to restore.
+            // manifest can describe this snapshot to the user. Unroot derives
+            // required images from the model, selected method and filenames.
             let vbmeta_backed_up;
             // TB323FU only: when the dumped efisp is empty (stock,
             // GBL-unprovisioned) we download the region GBL here and

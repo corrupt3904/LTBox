@@ -31,7 +31,7 @@ LTBox는 사이드바 중심의 데스크톱 GUI입니다. 각 항목을 열면 
 | **대시보드** | 기기 상태, 지역, 최근 폴더, 원클릭 작업 |
 | **펌웨어 플래싱** | 지역 → 대상 → 초기화/유지 → 플래싱을 한 흐름으로. 지역 변환과 롤백까지 한 번에 처리 |
 | **시스템 업데이트** | OTA 업데이트 비활성화/활성화; 지역 변환된 기기가 OTA 후 부팅에 실패하면 **부팅 복구**로 되살리기 |
-| **루팅** | KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk(+포크)로 루팅 |
+| **루팅** | KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk(+포크) / SKRoot Lite로 루팅 |
 | **언루팅** | 이전 루팅 백업에서 순정 부트 이미지 복원 |
 | **GPU 클럭/전압** | KonaBess로 기기 GPU 테이블을 수정하고 AVB 보호 이미지를 다시 빌드해 플래싱 |
 | **재부팅** | System / Recovery / Bootloader / EDL로 이동 |
@@ -64,6 +64,8 @@ LTBox는 사이드바 중심의 데스크톱 GUI입니다. 각 항목을 열면 
 </details>
 
 ---
+
+SKRoot Lite는 루팅 지원 기종에서 사용할 수 있으며 TB376FC / TB390FU는 제외됩니다. 패치 중 커널 호환성을 확인합니다. SKRoot Pro는 활성화되어 있지 않습니다. 생성된 키는 로그와 별도로 표시하며 루팅 백업 폴더의 `skroot-root-key.txt`에도 저장합니다.
 
 ## 🏗️ 프로젝트 구조
 

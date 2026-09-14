@@ -31,7 +31,7 @@ LTBox 是以侧边栏为核心的桌面 GUI，每个入口都会打开一个引�
 | **仪表盘** | 设备状态、区域、最近文件夹、一键操作 |
 | **刷写固件** | 区域 → 目标 → 清除/保留 → 刷写一气呵成，区域转换与回滚全程自动处理 |
 | **系统更新** | 禁用或重新启用 OTA 更新；**启动恢复**可救回区域转换后因 OTA 而无法启动的设备 |
-| **获取 Root** | 使用 KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk（及分支）获取 Root |
+| **获取 Root** | 使用 KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk（及分支）/ SKRoot Lite获取 Root |
 | **取消 Root** | 从之前的 Root 备份恢复原始引导镜像 |
 | **GPU 频率/电压** | 使用 KonaBess 修改设备 GPU 表，并重新构建和刷写受 AVB 保护的镜像 |
 | **重启** | 跳转到 System / Recovery / Bootloader / EDL |
@@ -64,6 +64,8 @@ LTBox 是以侧边栏为核心的桌面 GUI，每个入口都会打开一个引�
 </details>
 
 ---
+
+SKRoot Lite 可用于支持 Root 的机型，TB376FC / TB390FU 除外。补丁过程中会检查内核兼容性。SKRoot Pro 尚未启用。生成的密钥会单独显示，不写入日志，并保存在 Root 备份文件夹的 `skroot-root-key.txt` 中。
 
 ## 🏗️ 项目结构
 

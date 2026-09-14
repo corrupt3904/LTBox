@@ -79,3 +79,15 @@ carrying the minimal patches we need.
 To re-sync with upstream: re-copy `src/` + `Cargo.toml` from the desired
 `qualcomm/qdlrs` revision (library crate only; skip CLI files), then
 re-apply the patches above. Update the revision recorded here.
+
+After re-syncing, compare the complete local diff against the recorded upstream
+revision. Check the callback and final-response handling, USB/serial selection,
+and programmer-loading support against LTBox callers; this list alone is not a
+complete inventory of every local change.
+
+Run `cargo test -p ltbox-device --locked` from the LTBox workspace, including
+`firehose_faults`, `firehose_read`, and `edl::partition_flash` tests. Confirm
+that preflight rejects later invalid images before any write/erase, a missing
+or delayed final ACK prevents the next write, and an error stops the batch.
+Do not treat the untracked standalone vendor build directory as workspace test
+evidence. Real-device serial/USB checks remain a separate release check.

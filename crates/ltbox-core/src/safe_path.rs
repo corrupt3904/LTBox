@@ -5,13 +5,13 @@
 //! directory. A malicious or corrupt source could supply an absolute path
 //! (`C:\…`, `/etc/…`) or a `..` traversal that escapes the intended
 //! directory and reads or overwrites an arbitrary file. [`safe_join`]
-//! validates the reference stays inside `base` before returning it.
+//! rejects lexical traversal before joining the reference to `base`.
 
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{LtboxError, Result};
 
-/// Join `rel` onto `base`, guaranteeing the result stays within `base`.
+/// Join `rel` onto `base` after rejecting lexical traversal.
 ///
 /// Accepts plain names and forward sub-paths (`Normal` components and `.`),
 /// preserving legitimate firmware layouts. Rejects:
@@ -19,9 +19,10 @@ use crate::error::{LtboxError, Result};
 /// * `..` parent-directory components (the traversal vector),
 /// * empty input, or a reference that resolves back to `base` itself.
 ///
-/// Symlinks are deliberately not resolved: the component check blocks the
-/// on-disk attack vectors (`..` / absolute) without requiring the target to
-/// exist, which also sidesteps a canonicalize-then-use TOCTOU.
+/// Symlinks are not resolved. This does not guarantee filesystem containment:
+/// a symlink below `base` can still lead outside it. Callers requiring that
+/// guarantee must additionally control directory contents or use handle-based
+/// filesystem traversal; canonicalize-then-use alone is vulnerable to races.
 pub fn safe_join(base: &Path, rel: &str) -> Result<PathBuf> {
     if rel.trim().is_empty() {
         return Err(LtboxError::Other("empty path reference".into()));

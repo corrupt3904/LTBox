@@ -31,7 +31,7 @@ LTBox is a sidebar-driven desktop GUI; each entry opens a guided wizard.
 | **Dashboard** | Device status, region, recent folders, one-click actions |
 | **Flash Firmware** | One flow from region → target → wipe/keep → flash, with region conversion and rollback handled end-to-end |
 | **System Updates** | Disable or re-enable OTA updates; **Boot Recovery** revives a region-converted device that won't boot after an OTA |
-| **Root Device** | Root with KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk (+ forks) |
+| **Root Device** | Root with KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk (+ forks) / SKRoot Lite |
 | **Unroot Device** | Restore the stock boot image from an earlier root backup |
 | **GPU Clock/Voltage** | Edit the device GPU table with KonaBess, then rebuild and flash the AVB-protected images |
 | **Reboot** | Jump to System, Recovery, Bootloader, or EDL |
@@ -64,6 +64,8 @@ LTBox is a sidebar-driven desktop GUI; each entry opens a guided wizard.
 </details>
 
 ---
+
+SKRoot Lite is available on root-supported models; TB376FC / TB390FU remain excluded. Kernel compatibility is checked during patching. SKRoot Pro is not enabled. The generated key is shown separately from logs and saved as `skroot-root-key.txt` in the root backup folder.
 
 ## 🏗️ Project Layout
 
