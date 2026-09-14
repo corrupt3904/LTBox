@@ -113,7 +113,7 @@ pub(crate) enum Message {
     /// via `ToastClear` after a short delay.
     ToastShow(String),
     /// Clear the active toast (timer expiry).
-    ToastClear,
+    ToastClear(u64),
     /// Sidebar mouse-area entered — expand to full width.
     SidebarHoverEnter,
     /// Sidebar mouse-area exited — collapse back to icon-only width.

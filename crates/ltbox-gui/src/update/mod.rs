@@ -1040,15 +1040,19 @@ impl App {
             }
             Message::ToastShow(msg) => {
                 self.toast_msg = Some(msg);
+                self.toast_generation = self.toast_generation.wrapping_add(1);
+                let generation = self.toast_generation;
                 return Task::perform(
                     async {
-                        tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     },
-                    |_| Message::ToastClear,
+                    move |_| Message::ToastClear(generation),
                 );
             }
-            Message::ToastClear => {
-                self.toast_msg = None;
+            Message::ToastClear(generation) => {
+                if generation == self.toast_generation {
+                    self.toast_msg = None;
+                }
             }
             Message::SidebarHoverEnter => {
                 if self.window_size_class() == WindowSizeClass::Compact {
@@ -1380,5 +1384,22 @@ impl App {
             }
         }
         Task::none()
+    }
+}
+
+#[cfg(test)]
+mod feedback_tests {
+    use super::*;
+
+    #[test]
+    fn expired_toast_cannot_clear_its_replacement() {
+        let mut app = App::default();
+        let _ = app.update(Message::ToastShow("first".into()));
+        let first = app.toast_generation;
+        let _ = app.update(Message::ToastShow("second".into()));
+        let _ = app.update(Message::ToastClear(first));
+        assert_eq!(app.toast_msg.as_deref(), Some("second"));
+        let _ = app.update(Message::ToastClear(app.toast_generation));
+        assert!(app.toast_msg.is_none());
     }
 }

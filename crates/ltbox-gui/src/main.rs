@@ -1876,6 +1876,7 @@ struct App {
     manual_rollback_format: RollbackValueFormat,
     /// Transient toast message; auto-cleared by a delayed task.
     toast_msg: Option<String>,
+    toast_generation: u64,
     /// Compact-sidebar hover state — true when the mouse is over the rail.
     sidebar_expanded: bool,
     /// Compact overlay tween progress in [0.0, 1.0].
@@ -2086,6 +2087,7 @@ impl Default for App {
             rollback_value_format: RollbackValueFormat::default(),
             manual_rollback_format: RollbackValueFormat::Unix,
             toast_msg: None,
+            toast_generation: 0,
             sidebar_expanded: false,
             sidebar_anim: 0.0,
             sidebar_velocity: 0.0,
