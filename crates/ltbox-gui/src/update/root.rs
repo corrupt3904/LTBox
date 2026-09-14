@@ -369,10 +369,8 @@ impl App {
             }
             RootMsg::RootKpmSelected(paths) => {
                 if let Some(paths) = paths {
-                    if let Some(first) = paths.first() {
-                        self.remember_recent(pickers::PickerKind::File, first);
-                    }
                     for p in paths {
+                        self.remember_recent(pickers::PickerKind::File, &p);
                         if !self.root.kpm_paths.iter().any(|existing| existing == &p) {
                             self.root.kpm_paths.push(p);
                         }

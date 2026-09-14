@@ -569,15 +569,13 @@ impl App {
                     LogSaveSource::Main => "ltbox.log",
                     LogSaveSource::ImageInfo => "image_info.txt",
                 };
+                let dialog = pickers::build_file_dialog(
+                    &pickers::FilePickSpec::single().with_filter("Log", &["log", "txt"]),
+                    &self.recent_paths,
+                )
+                .set_file_name(file_name);
                 return Task::perform(
-                    async move {
-                        rfd::AsyncFileDialog::new()
-                            .set_file_name(file_name)
-                            .add_filter("Log", &["log", "txt"])
-                            .save_file()
-                            .await
-                            .map(|h| h.path().to_path_buf())
-                    },
+                    async move { dialog.save_file().await.map(|h| h.path().to_path_buf()) },
                     Message::SaveLogPath,
                 );
             }
@@ -594,10 +592,13 @@ impl App {
                 }
             }
             Message::LogSaved(source, path, result) => match result {
-                Ok(()) => self.note_log_save_result(
-                    source,
-                    tr_args!("log_save_succeeded", path = path.display()),
-                ),
+                Ok(()) => {
+                    self.remember_recent(pickers::PickerKind::File, &path.to_string_lossy());
+                    self.note_log_save_result(
+                        source,
+                        tr_args!("log_save_succeeded", path = path.display()),
+                    );
+                }
                 Err(error) => {
                     self.error_msg = Some(tr_args!("err_log_save_failed", error = error.clone()));
                     self.note_log_save_result(source, tr_args!("log_save_failed", error = error));

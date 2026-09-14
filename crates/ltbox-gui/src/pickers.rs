@@ -107,7 +107,11 @@ pub fn pick_folder_for<M: 'static + Send>(
         kind.is_folder(),
         "pick_folder_for called with file kind {kind:?}"
     );
-    let start_dir: Option<PathBuf> = recents.most_recent(kind.storage_key()).map(PathBuf::from);
+    let start_dir = recents
+        .recent(kind.storage_key())
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.is_dir());
     Task::perform(
         async move {
             let mut dialog = AsyncFileDialog::new();
@@ -124,30 +128,27 @@ pub fn pick_folder_for<M: 'static + Send>(
 }
 
 /// Build an rfd file dialog from `spec`.
-fn build_file_dialog(spec: &FilePickSpec, recents: &RecentPaths) -> AsyncFileDialog {
+pub(crate) fn build_file_dialog(spec: &FilePickSpec, recents: &RecentPaths) -> AsyncFileDialog {
     let mut dialog = AsyncFileDialog::new();
     if !spec.exts.is_empty() && !spec.filter_label.is_empty() {
         let exts: Vec<&str> = spec.exts.iter().map(String::as_str).collect();
         dialog = dialog.add_filter(&spec.filter_label, &exts);
     }
-    if let Some(sd) = recents
-        .most_recent(PickerKind::File.storage_key())
-        .map(PathBuf::from)
-        .filter(|p| p.exists())
-    {
-        // Recent may be a file path — rfd wants a directory, so normalise
-        // to parent when needed. Missing/non-dir parent falls through to
-        // the OS default (no set_directory call).
-        let dir = if sd.is_dir() {
-            sd
-        } else {
-            sd.parent().map(PathBuf::from).unwrap_or(sd)
-        };
-        if dir.is_dir() {
-            dialog = dialog.set_directory(dir);
-        }
+    if let Some(dir) = recent_file_directory(spec, recents) {
+        dialog = dialog.set_directory(dir);
     }
     dialog
+}
+
+fn recent_file_directory(spec: &FilePickSpec, recents: &RecentPaths) -> Option<PathBuf> {
+    let extensions: Vec<&str> = spec.exts.iter().map(String::as_str).collect();
+    recents
+        .recent(PickerKind::File.storage_key())
+        .iter()
+        .filter(|p| path_matches_extensions(p, &extensions))
+        .map(PathBuf::from)
+        .find(|p| p.is_file())
+        .and_then(|p| p.parent().map(PathBuf::from))
 }
 
 /// Single-file pick, `None` on cancel.
@@ -199,6 +200,27 @@ pub fn pick_files_for<M: 'static + Send>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starting_directory_uses_matching_extension_and_skips_missing_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let loaders = temp.path().join("loaders");
+        std::fs::create_dir(&loaders).unwrap();
+        let loader = loaders.join("loader.MELF");
+        let apk = temp.path().join("manager.apk");
+        std::fs::write(&loader, []).unwrap();
+        std::fs::write(&apk, []).unwrap();
+        let mut recents = RecentPaths::default();
+        for p in [&loader, &apk, &loaders.join("missing.melf")] {
+            recents.push("file", &p.to_string_lossy());
+        }
+        let spec = FilePickSpec::single().with_filter("Loader", &["melf"]);
+        assert_eq!(recent_file_directory(&spec, &recents), Some(loaders));
+        assert_eq!(
+            recent_file_directory(&FilePickSpec::single(), &recents),
+            Some(temp.path().to_owned())
+        );
+    }
 
     #[test]
     fn storage_keys_are_unique_and_stable() {

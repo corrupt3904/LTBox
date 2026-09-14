@@ -9,10 +9,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(test))]
 const APP_DIR: &str = "ltbox";
+#[cfg(not(test))]
 const FILE_NAME: &str = "settings.json";
 
-/// Maximum number of recent paths to remember per category.
+/// Maximum visible recents; stored per folder category or file extension.
 pub const RECENT_MAX: usize = 3;
 
 /// Legacy global-files bucket key for migration from pre-category config.
@@ -54,20 +56,16 @@ impl RecentPaths {
             return false;
         }
         let list = self.by_kind.entry(kind.to_string()).or_default();
-        push_front_dedup(list, path)
+        if kind == "file" {
+            push_file_recent(list, path)
+        } else {
+            push_front_dedup(list, path)
+        }
     }
 
     /// MRU list for `kind`, or empty slice if none.
     pub fn recent(&self, kind: &str) -> &[String] {
         self.by_kind.get(kind).map(Vec::as_slice).unwrap_or(&[])
-    }
-
-    /// Most-recent entry for `kind` — handy as a `rfd` starting dir.
-    pub fn most_recent(&self, kind: &str) -> Option<&str> {
-        self.by_kind
-            .get(kind)
-            .and_then(|v| v.first())
-            .map(String::as_str)
     }
 
     /// Fold legacy `files` / `folders` arrays into the kind map. Idempotent.
@@ -79,6 +77,29 @@ impl RecentPaths {
             let _ = self.push(LEGACY_FOLDERS_KEY, &p);
         }
     }
+}
+
+// File pickers filter by extension after loading. Keep three entries per
+// extension so unrelated APK/module picks cannot evict EDL loaders or images.
+fn push_file_recent(list: &mut Vec<String>, path: &str) -> bool {
+    if path.is_empty() {
+        return false;
+    }
+    let before = list.clone();
+    list.retain(|p| p != path);
+    list.insert(0, path.to_owned());
+    let mut counts = BTreeMap::new();
+    list.retain(|p| {
+        let extension = Path::new(p)
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let count = counts.entry(extension).or_insert(0);
+        *count += 1;
+        *count <= RECENT_MAX
+    });
+    *list != before
 }
 
 fn push_front_dedup(list: &mut Vec<String>, path: &str) -> bool {
@@ -225,8 +246,17 @@ impl Default for PersistedSettings {
     }
 }
 
+#[cfg(not(test))]
 fn config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join(APP_DIR).join(FILE_NAME))
+}
+
+// GUI handler tests instantiate App and trigger saves. They must never read
+// or overwrite the user's settings shared by installed and debug builds.
+// Persistence tests exercise explicit temporary paths through save_to_path.
+#[cfg(test)]
+fn config_path() -> Option<PathBuf> {
+    None
 }
 
 /// Load settings. On missing / malformed / no config dir, returns
@@ -448,15 +478,6 @@ mod tests {
         // Same as above but /a still present when re-pushed — moves to
         // front, /b /c shift, no new slot consumed.
         assert_eq!(r.recent("k"), &["/a", "/c", "/b"]);
-    }
-
-    #[test]
-    fn most_recent_returns_top() {
-        let mut r = RecentPaths::default();
-        r.push("k", "/x");
-        r.push("k", "/y");
-        assert_eq!(r.most_recent("k"), Some("/y"));
-        assert_eq!(r.most_recent("empty"), None);
     }
 
     #[test]

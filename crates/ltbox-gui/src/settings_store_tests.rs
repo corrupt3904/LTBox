@@ -128,3 +128,49 @@ fn locked_destination_preserves_old_bytes_and_cleans_temporary_file() {
     assert_eq!(preserved, old_bytes);
     assert_only_settings_file(root.path(), &path);
 }
+
+#[test]
+fn file_and_folder_recents_survive_reload_without_cross_type_eviction() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("settings.json");
+    let mut settings = PersistedSettings::default();
+    for file in [
+        "loader.melf",
+        "manager.apk",
+        "ksuinit",
+        "kernelsu.ko",
+        "boot.img",
+    ] {
+        settings.recent_paths.push("file", file);
+    }
+    for kind in [
+        "loader_folder",
+        "qfil_firmware_folder",
+        "encrypted_rawprogram_folder",
+        "output_folder",
+    ] {
+        settings.recent_paths.push(kind, "folder");
+    }
+    save_to_path(&path, &settings).unwrap();
+    let mut loaded: PersistedSettings = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    loaded.recent_paths.migrate_legacy();
+    assert_eq!(loaded.recent_paths.by_kind, settings.recent_paths.by_kind);
+    for file in ["second.apk", "third.APK", "fourth.apk"] {
+        loaded.recent_paths.push("file", file);
+    }
+    let files = loaded.recent_paths.recent("file");
+    assert!(files.iter().any(|p| p == "loader.melf"));
+    assert!(!files.iter().any(|p| p == "manager.apk"));
+    assert_eq!(
+        files
+            .iter()
+            .filter(|p| p.to_lowercase().ends_with(".apk"))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn gui_tests_do_not_use_the_real_user_settings_path() {
+    assert!(config_path().is_none());
+}
