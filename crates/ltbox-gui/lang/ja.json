@@ -313,6 +313,7 @@
   "err_task_failed": "タスクに失敗しました。",
   "err_task_failed_with_error": "タスクに失敗しました： {error}",
   "err_task_panicked": "タスクがパニックで停止しました。",
+  "err_unroot_connection_required": "現在のスロットを確認できるよう、ADB または Fastboot で接続してください。",
   "err_unroot_device_dump_failed": "端末から {label} を読み取れず、バックアップと照合できません。書き込まずに中止します。",
   "err_unroot_fingerprint_mismatch": "バックアップは端末とは異なるファームウェアビルドのものです。端末：{device}、バックアップ：{image}。この端末を root 化したときに作成されたフォルダーを選択してください。",
   "err_unroot_fingerprint_unreadable": "端末のイメージまたはバックアップにビルドフィンガープリントがなく、同じファームウェアか確認できません。書き込まずに中止します。",

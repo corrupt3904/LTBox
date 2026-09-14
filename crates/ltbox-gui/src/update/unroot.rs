@@ -89,6 +89,10 @@ impl App {
                 Task::none()
             }
             UnrootMsg::UnrootExecStart => {
+                if !unroot_connection_ready(self.device.connection) {
+                    self.error_msg = Some(self.t("err_unroot_connection_required").to_string());
+                    return Task::none();
+                }
                 if !ltbox_core::model::capabilities(&self.device.model).unroot {
                     self.error_msg =
                         Some(tr_args!("model_unsupported", model = "TB376FC / TB390FU"));

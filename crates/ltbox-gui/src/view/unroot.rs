@@ -45,7 +45,7 @@ impl App {
             let can = self.unroot.can_next()
                 && ltbox_core::model::capabilities(&self.device.model).unroot
                 && !(self.operation.is_running() && is_start)
-                && (!is_start || self.device_reachable());
+                && (!is_start || unroot_connection_ready(self.device.connection));
             wizard_nav_generic(
                 self.unroot.step > 0,
                 &label_owned,
@@ -357,8 +357,15 @@ impl App {
             .folder_path
             .clone()
             .unwrap_or_else(|| dash.clone());
+        let notices = if unroot_connection_ready(self.device.connection) {
+            vec![]
+        } else {
+            vec![dialog_field_error(
+                self.t("err_unroot_connection_required").to_string(),
+            )]
+        };
         self.confirm_step_frame(
-            vec![],
+            notices,
             vec![confirm_definition_row(
                 self.t("unroot_step_method"),
                 &method,

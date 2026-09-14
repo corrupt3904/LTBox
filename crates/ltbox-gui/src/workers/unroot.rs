@@ -12,6 +12,13 @@ use std::path::{Path, PathBuf};
 
 use super::root_backup::{BackupContents, BackupRootTarget, resolve_backup_contents};
 
+pub(crate) fn unroot_connection_ready(conn: ConnectionStatus) -> bool {
+    matches!(
+        conn,
+        ConnectionStatus::Adb | ConnectionStatus::AdbRecovery | ConnectionStatus::Fastboot
+    )
+}
+
 pub(crate) fn unroot_worker(
     folder: String,
     unroot_type: UnrootType,
@@ -27,6 +34,9 @@ pub(crate) fn unroot_worker(
     let edl_start = matches!(conn, ConnectionStatus::Edl);
     if !ltbox_core::model::capabilities(&device_model).unroot {
         return Err(tr_args!("model_unsupported", model = "TB376FC / TB390FU"));
+    }
+    if !unroot_connection_ready(conn) {
+        return Err(tr("err_unroot_connection_required"));
     }
     let dir = std::path::Path::new(&folder);
 
@@ -446,6 +456,14 @@ mod tests {
     use super::*;
 
     const FP: &str = "qti/TB320FC/TB320FC:14/UP1A/S000123:user/release-keys";
+
+    #[test]
+    fn unroot_requires_a_connection_that_can_resolve_the_active_slot() {
+        assert!(!unroot_connection_ready(ConnectionStatus::Edl));
+        assert!(unroot_connection_ready(ConnectionStatus::Adb));
+        assert!(unroot_connection_ready(ConnectionStatus::AdbRecovery));
+        assert!(unroot_connection_ready(ConnectionStatus::Fastboot));
+    }
 
     #[test]
     fn matching_fingerprint_and_index_flashes_the_backup_untouched() {
