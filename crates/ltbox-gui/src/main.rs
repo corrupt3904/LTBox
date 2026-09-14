@@ -39,6 +39,7 @@ mod platform_installers;
 mod root_manager;
 mod self_update;
 mod settings_store;
+mod single_instance;
 mod software_fix;
 mod stdout_tap;
 mod theme;
@@ -272,48 +273,27 @@ fn main() -> iced::Result {
         install_desktop_file();
     }
 
-    // Single-instance lock via fs2 advisory lock in the system temp
-    // dir. Kernel drops the lock on dirty shutdown. Version-agnostic
-    // filename so a running v3.0.0 blocks a v3.0.1 during in-place update.
-    let _instance_guard: Option<std::fs::File> = {
-        use fs2::FileExt;
-        let lock_path = std::env::temp_dir().join("ltbox-gui-singleton.lock");
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)
-        {
-            Ok(f) => {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-                loop {
-                    match f.try_lock_exclusive() {
-                        Ok(()) => break Some(f),
-                        // Only an updater-spawned process waits for the old
-                        // instance to release the lock. An ordinary second
-                        // launch keeps the existing quiet, immediate exit.
-                        Err(_) if post_update_relaunch && std::time::Instant::now() < deadline => {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                        }
-                        Err(_) => return Ok(()),
-                    }
-                }
-            }
-            // Can't create the guard (sandboxed FS). A post-update child still
-            // pauses long enough for the spawning process to leave its runtime;
-            // ordinary launches preserve the prior unguarded behavior.
-            Err(_) => {
-                if post_update_relaunch {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                }
-                None
-            }
+    // Preserve the version-agnostic path for compatibility with running older
+    // releases. Failure to create or acquire a usable guard must fail closed.
+    let lock_path = std::env::temp_dir().join("ltbox-gui-singleton.lock");
+    let _instance_guard = match single_instance::acquire(&lock_path, post_update_relaunch) {
+        Ok(Some(file)) => file,
+        Ok(None) => return Ok(()),
+        Err(error) => {
+            let description = format!(
+                "Cannot acquire the LTBox instance lock at {}: {error}",
+                lock_path.display()
+            );
+            eprintln!("{description}");
+            rfd::MessageDialog::new()
+                .set_title("LTBox")
+                .set_description(description)
+                .set_level(rfd::MessageLevel::Error)
+                .show();
+            return Ok(());
         }
     };
-    if _instance_guard.is_some() {
-        self_update::cleanup_stale_update_backups();
-    }
+    self_update::cleanup_stale_update_backups();
 
     // libusb (via `adb_client` → `rusb`) probes for optional backends by
     // calling LoadLibrary on `%SystemRoot%\System32\libusbK.dll`, and it
