@@ -7,9 +7,9 @@ already-built Linux release binaries with nFPM, attaches the Linux packages to
 that release, and replaces the hosted APT and YUM repositories with the current
 release.
 
-The tag must be `vX.Y.Z`. Before publishing the draft, clear its **prerelease**
-flag if it should become visible to LTBox's stable update check and package
-managers.
+The tag must be `vX.Y.Z` and match the workspace version. CI creates a draft
+with the prerelease flag disabled. Publish the draft after reviewing its assets.
+Package publications are serialized; older versions cannot replace newer ones.
 
 ## External repositories and credentials
 
@@ -35,9 +35,9 @@ Configure these LTBox repository Actions secrets:
   KEY BLOCK` lines.
 - `REPO_GPG_PASSPHRASE`: the passphrase protecting that private key.
 
-If a secret is absent, its repository is absent or inaccessible, or the token
-cannot push, the workflow emits a clear notice/warning and skips only that
-external publication. Linux release packages are independent of those tokens.
+Missing secrets skip the corresponding external publication with a notice.
+Once configured, inaccessible repositories and failed pushes fail the job.
+Linux release packages are independent of those tokens.
 
 No repository secret is needed for `.deb`/`.rpm` attachment; the workflow uses
 the release repository's short-lived `GITHUB_TOKEN`. When both repository GPG

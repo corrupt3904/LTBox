@@ -59,6 +59,18 @@ env:
   XWIN_ACCEPT_LICENSE: "1"
 
 jobs:
+  release-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Match stable tag to workspace version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 packaging/release_policy.py tag "${RELEASE_TAG}" Cargo.toml
+
   fmt-clippy:
     name: fmt + clippy
     runs-on: ubuntu-latest
@@ -159,6 +171,7 @@ jobs:
           cargo deny check
 
   build-windows:
+    needs: release-version
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -291,6 +304,7 @@ jobs:
           if-no-files-found: error
 
   build-linux:
+    needs: release-version
     name: Build linux_${{ matrix.arch }}
     # Each matrix entry declares its runner explicitly. x86_64 tracks
     # ubuntu-latest so CI follows GitHub's current Linux image. arm64 uses
@@ -398,6 +412,7 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: release-version
     name: Build macos_universal
     # macos-26 is the Apple Silicon (arm64) runner; the x86_64 slice
     # cross-builds on it natively (Apple clang + the universal SDK), so one
@@ -603,7 +618,7 @@ jobs:
 
   release:
     name: Draft GitHub Release
-    needs: [fmt-clippy, cargo-deny, build-windows, build-linux, build-macos, test, test-linux, test-macos]
+    needs: [release-version, fmt-clippy, cargo-deny, build-windows, build-linux, build-macos, test, test-linux, test-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -623,7 +638,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
           files: |
             artifacts/**/LTBox-win_x86_64-*.zip
