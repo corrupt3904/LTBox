@@ -80,7 +80,7 @@ overrides:
       - libxkbcommon
       - libxkbcommon-x11
       - systemd-libs
-      - wayland-libs
+      - libwayland-client.so.0()(64bit)
 
 deb:
   compression: gzip:9
