@@ -384,7 +384,6 @@ pub(crate) enum AdvMsg {
     /// DetectArb worker result. `Vec<String>` is the live-log lines
     /// to flush; `Err(_)` carries a banner message.
     AdvDetectArbExecDone(Result<Vec<String>, String>),
-    AdvWizOpenCountry,
     AdvWizOpenRegionTarget,
     AdvWizOpenOutputFolder,
 }

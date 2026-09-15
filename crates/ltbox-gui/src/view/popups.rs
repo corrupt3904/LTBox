@@ -1341,8 +1341,15 @@ impl App {
                 Space::new().width(Length::Fill),
                 m3_outlined_button(self.t("btn_cancel").to_string())
                     .on_press(Message::DismissCountryPopup),
-                m3_filled_button(self.t("btn_select").to_string())
-                    .on_press_maybe(can_confirm.then_some(Message::CountryPopupConfirm),),
+                m3_filled_button(
+                    self.t(if self.adv_needs_country {
+                        "btn_next"
+                    } else {
+                        "btn_select"
+                    })
+                    .to_string()
+                )
+                .on_press_maybe(can_confirm.then_some(Message::CountryPopupConfirm),),
             ]
             .spacing(10)
             .align_y(iced::Alignment::Center)

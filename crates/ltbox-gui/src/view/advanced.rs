@@ -23,7 +23,7 @@ impl App {
         if self.advanced_wizard_open.is_simple_flash() {
             return self.view_simple_flash_wizard();
         }
-        if self.adv_wizard.action.is_some() {
+        if self.adv_wizard.action.is_some() && !self.adv_needs_country {
             return self.view_adv_wizard();
         }
 
@@ -103,8 +103,6 @@ impl App {
         } else if is_confirm {
             self.adv_wiz_confirm_step()
         } else if needs_country && self.adv_wizard.step == 0 {
-            self.adv_wiz_country_step()
-        } else if needs_country && self.adv_wizard.step == 1 {
             self.adv_wiz_loader_step()
         } else if needs_region_target && self.adv_wizard.step == 1 {
             self.adv_wiz_region_target_step()
@@ -122,11 +120,7 @@ impl App {
         let body = if shared_exec {
             body
         } else {
-            if detect_arb_loader
-                || (!is_confirm
-                    && ((!needs_country && self.adv_wizard.step == 0)
-                        || (needs_country && self.adv_wizard.step == 1)))
-            {
+            if detect_arb_loader || (!is_confirm && self.adv_wizard.step == 0) {
                 self.wizard_picker_step(step_title, body)
             } else {
                 wizard_step_body(step_title, body)
@@ -227,11 +221,6 @@ impl App {
             )
         } else if self.adv_wizard.needs_country() && self.adv_wizard.step == 0 {
             (
-                self.t("adv_country_title").to_string(),
-                self.t("adv_country_subtitle").to_string(),
-            )
-        } else if self.adv_wizard.needs_country() && self.adv_wizard.step == 1 {
-            (
                 self.t("edl_loader_title").to_string(),
                 self.loader_picker_subtitle(),
             )
@@ -308,73 +297,6 @@ impl App {
         .into()
     }
 
-    /// Step 1 (PatchDevinfo only) — country picker tile; opens the
-    /// shared country popup.
-    pub(crate) fn adv_wiz_country_step(&self) -> Element<'_, Message> {
-        let selected = self.adv_wizard.country.is_some();
-        let status = self
-            .adv_wizard
-            .country
-            .clone()
-            .unwrap_or_else(|| self.t("adv_country_placeholder").to_string());
-        let btn = button(
-            container(
-                column![
-                    text(self.t("btn_pick_country").to_string())
-                        .size(14.0)
-                        .center(),
-                    text(tr_args!(
-                        "adv_country_pick_count",
-                        count = COUNTRY_CODES.len().to_string()
-                    ))
-                    .size(11.0)
-                    .style(muted_style)
-                    .center(),
-                ]
-                .spacing(6.0)
-                .width(Length::Fixed(280.0))
-                .align_x(iced::Alignment::Center),
-            )
-            .padding([20.0, 24.0])
-            .width(Length::Fixed(280.0))
-            .style(move |t: &Theme| sel_card_style(t, selected)),
-        )
-        .width(Length::Shrink)
-        .on_press(Message::Adv(AdvMsg::AdvWizOpenCountry))
-        .padding(0)
-        .style(move |t: &Theme, status| sel_card_btn_style(t, status, selected));
-        let btn_row = row![
-            Space::new().width(Length::Fill),
-            btn,
-            Space::new().width(Length::Fill),
-        ];
-        let status_style = move |t: &Theme| {
-            let p = pal_of(t);
-            iced::widget::text::Style {
-                color: Some(if selected { p.success } else { p.outline }),
-            }
-        };
-        let col = column![
-            btn_row,
-            text(status)
-                .size(12.0)
-                .width(Length::Fill)
-                .style(status_style)
-                .center()
-                .wrapping(iced::widget::text::Wrapping::WordOrGlyph),
-        ]
-        .spacing(14.0)
-        .padding(28.0)
-        .width(Length::Fill)
-        .align_x(iced::Alignment::Center);
-        container(col)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .center_x(Length::Fill)
-            .align_y(iced::alignment::Vertical::Top)
-            .into()
-    }
-
     /// Step 1 for Change Country Code: pick the EDL loader (the device is
     /// transitioned to EDL with it). Same loader-browse the DetectArb step uses.
     pub(crate) fn adv_wiz_loader_step(&self) -> Element<'_, Message> {
@@ -409,7 +331,7 @@ impl App {
     }
 
     /// Step 1 for `RegionConvert`: card that opens the target picker
-    /// popup. Mirrors `adv_wiz_country_step` shape so the wizard
+    /// popup. Uses a selection card so the wizard
     /// rendering stays consistent with the other "needs option"
     /// flow (PatchDevinfo).
     pub(crate) fn adv_wiz_region_target_step(&self) -> Element<'_, Message> {

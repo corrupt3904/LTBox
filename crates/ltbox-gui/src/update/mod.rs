@@ -388,6 +388,8 @@ impl App {
                 self.country_popup_draft = CountryAction::Unset;
                 if self.adv_needs_country {
                     self.adv_needs_country = false;
+                    self.adv_wizard.reset();
+                    self.adv_confirm_path = None;
                 } else if self.flash.current_step() == FlashStep::Folder
                     && matches!(self.wf_config.country_action, CountryAction::Unset)
                 {
@@ -1396,6 +1398,26 @@ impl App {
 #[cfg(test)]
 mod feedback_tests {
     use super::*;
+
+    #[test]
+    fn advanced_country_popup_precedes_loader_and_confirmation() {
+        let mut app = App::default();
+        let _ = app.update(Message::Adv(AdvMsg::AdvWizOpen(AdvAction::PatchDevinfo)));
+        assert!(app.country_popup_open && app.adv_needs_country);
+        let _ = app.update(Message::CountryPopupConfirm);
+        assert!(app.country_popup_open);
+        let _ = app.update(Message::SelectCountry("KR".into()));
+        let _ = app.update(Message::CountryPopupConfirm);
+        assert!(!app.country_popup_open && !app.adv_needs_country);
+        assert_eq!(app.adv_wizard.steps()[0], "edl_loader_label");
+        assert!(!app.adv_wizard.can_next());
+        app.adv_wizard.file_path = Some("loader.elf".into());
+        let _ = app.update(Message::Adv(AdvMsg::AdvWizNext));
+        assert!(app.adv_wizard.is_confirm_step());
+        let _ = app.update(Message::Adv(AdvMsg::AdvWizOpen(AdvAction::PatchDevinfo)));
+        let _ = app.update(Message::DismissCountryPopup);
+        assert!(app.adv_wizard.action.is_none());
+    }
 
     #[test]
     fn help_remains_open_until_explicitly_closed() {

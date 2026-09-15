@@ -640,6 +640,10 @@ impl App {
                     self.adv_wizard.file_path = Some(resolved);
                 }
                 self.adv_confirm_path = None;
+                if self.adv_wizard.needs_country() {
+                    self.adv_needs_country = true;
+                    self.open_country_popup();
+                }
                 Task::none()
             }
             AdvMsg::AdvWizBack => {
@@ -904,11 +908,6 @@ impl App {
                     self.adv_wizard.file_paths = paths;
                     self.adv_wizard.file_path = None;
                 }
-                Task::none()
-            }
-            AdvMsg::AdvWizOpenCountry => {
-                self.adv_needs_country = true;
-                self.open_country_popup();
                 Task::none()
             }
             AdvMsg::AdvWizOpenRegionTarget => {

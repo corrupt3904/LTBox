@@ -2185,13 +2185,8 @@ impl AdvWizard {
             return &["adv_step_source", "adv_step_info"];
         }
         if self.needs_country() {
-            // Change Country Code: country pick, then EDL loader, confirm, exec.
-            &[
-                "adv_step_country",
-                "edl_loader_label",
-                "flash_step_confirm",
-                "flash_step_flash",
-            ]
+            // Country is chosen in a popup before the loader wizard opens.
+            &["edl_loader_label", "flash_step_confirm", "flash_step_flash"]
         } else if self.needs_region_target() {
             &[
                 "adv_step_source",
@@ -2228,13 +2223,8 @@ impl Wizard for AdvWizard {
         self.steps().len()
     }
     fn can_next(&self) -> bool {
-        // Change Country Code: step 0 picks the country, step 1 the EDL loader.
         if self.needs_country() {
-            return match self.step {
-                0 => self.country.is_some(),
-                1 => self.file_path.is_some(),
-                _ => true,
-            };
+            return self.country.is_some() && self.file_path.is_some();
         }
         if self.step == 0 {
             if self.is_image_info() {
