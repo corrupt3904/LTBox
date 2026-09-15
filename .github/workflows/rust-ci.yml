@@ -515,6 +515,9 @@ jobs:
     name: Test (host x86_64)
     runs-on: windows-2025-vs2026
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     defaults:
       run:
         shell: pwsh
@@ -526,21 +529,54 @@ jobs:
         # `rustup show` triggers the toml-driven 1.95.0 install.
         run: rustup show
 
-      - name: Cargo source cache
+      - name: Start cache restore timer
+        run: python ci/cache_metrics.py start dependency-cache-restore
+
+      - name: Windows dependency target cache
+        id: windows-cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
+          shared-key: windows-host-test-v1
+          cache-targets: true
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-bin: false
+
+      - name: Finish cache restore timer
+        run: python ci/cache_metrics.py finish dependency-cache-restore
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: cargo test --workspace
-        run: cargo test --workspace --locked
+        run: python ci/cache_metrics.py run workspace-tests cargo test --workspace --locked
 
       - name: Test GUI demo behavior
-        run: cargo test -p ltbox-gui --features demo --locked
+        run: python ci/cache_metrics.py run demo-tests cargo test -p ltbox-gui --features demo --locked
+
+      - name: Snapshot repository cache usage
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cache-metrics" | Out-Null
+          gh api "repos/$env:GITHUB_REPOSITORY/actions/cache/usage" > "$env:RUNNER_TEMP/cache-metrics/repository-cache.json"
+
+      - name: Record cache experiment
+        if: always()
+        continue-on-error: true
+        env:
+          TARGET_CACHE_HIT: ${{ steps.windows-cache.outputs.cache-hit }}
+        run: python ci/cache_metrics.py report target
+
+      - name: Upload cache measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-cache-metrics
+          path: ${{ runner.temp }}/cache-metrics/
+          retention-days: 14
 
   test-linux:
     # Linux native test gate — distinct from the Windows test job
