@@ -165,3 +165,6 @@ and current Fedora containers for both x86_64 and arm64. `ldd -r` verifies the
 installed binary's libraries and relocations without starting device discovery.
 Ubuntu 24.04 is the release build baseline; older glibc environments are not
 covered. This does not replace GUI or physical-device testing.
+
+The weekly dependency-policy workflow runs the same pinned, locked cargo-deny
+check as Rust CI, including when no source changes have occurred.

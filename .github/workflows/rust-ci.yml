@@ -1,12 +1,6 @@
 name: Rust CI
 
-# Ubuntu runners cross-compile every Windows target via cargo-xwin so
-# the Windows-specific msvc-dev-cmd / clang vs clang-cl / link.exe
-# machine-type / LLVM-on-PATH dance from the previous matrix is gone.
-# The only Windows job left is `test` because cross-built .exes can't
-# execute on Linux (Wine is not viable for an iced GUI binary), and
-# the test gate has to actually run the binary.
-#
+# Windows binaries are cross-built; Windows, Linux, and macOS tests run natively.
 concurrency:
   group: rust-ci-${{ github.ref_name }}
   cancel-in-progress: true
@@ -78,6 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
       - name: Install LLVM toolchain
         # cargo-xwin needs clang-cl + lld-link to drive the cross
         # MSVC compile that clippy delegates to.
@@ -124,18 +121,8 @@ jobs:
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
 
-      - name: cargo fmt --check
-        run: cargo fmt --all -- --check
-
       - name: cargo xwin clippy
-        # Workspace pulls Windows-only crates (`windows-sys`,
-        # `winresource`, `serialport` via libusb1-sys) AND uses
-        # `#[cfg(windows)]` modules unconditionally
-        # (`stdout_tap`, `windows_driver`, …). Linting against the
-        # Linux host fails on libudev-sys + missing `windows::*`
-        # APIs. Target x86_64-pc-windows-msvc through the same
-        # cargo-xwin sysroot the build jobs use so clippy sees the
-        # same world rustc will compile against.
+        # Check Windows cfg paths against the same sysroot as release builds.
         run: cargo xwin clippy --workspace --all-targets --locked --target x86_64-pc-windows-msvc
 
       - name: cargo xwin clippy (demo)
@@ -151,7 +138,7 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2.87.1
         with:
-          tool: cargo-deny
+          tool: cargo-deny@0.19.8
 
       - name: Cache cargo-deny advisory DB
         uses: actions/cache@v6
@@ -161,14 +148,14 @@ jobs:
           restore-keys: |
             cargo-deny-advisory-db-${{ runner.os }}-
 
-      - name: cargo deny check
+      - name: cargo deny --locked check
         # Advisories (RUSTSEC), license policy, banned crates, and dependency
         # sources — config in deny.toml at the repo root. This metadata-only
         # job does not install sccache, so keep it independent of the global
         # compiler wrapper used by build/test jobs.
         run: |
           unset RUSTC_WRAPPER
-          cargo deny check
+          cargo deny --locked check
 
   build-windows:
     needs: release-version
