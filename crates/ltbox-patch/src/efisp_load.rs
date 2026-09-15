@@ -1,6 +1,6 @@
 //! Static efisp loader detection, ported from check_efisp_load.py.
+use liblzma::stream::{Action, Status, Stream};
 use std::collections::HashSet;
-use xz2::stream::{Action, Status, Stream};
 
 const LZMA_OFFSET: usize = 0x1078;
 const MAX_DECOMPRESSED_SIZE: usize = 64 * 1024 * 1024;
