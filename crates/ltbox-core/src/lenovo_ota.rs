@@ -84,8 +84,7 @@ pub fn fetch_ota(serial: &str, firmware_id: &str) -> Result<Option<OtaUpdate>> {
 /// Parse the upstream XML body. Pulled out so the test suite can drive
 /// the parser without needing network access.
 pub fn parse_ota_xml(xml: &str) -> Result<Option<OtaUpdate>> {
-    let doc =
-        roxmltree::Document::parse(xml).map_err(|e| LtboxError::Other(format!("OTA XML: {e}")))?;
+    let doc = crate::xml::parse(xml).map_err(|e| LtboxError::Other(format!("OTA XML: {e}")))?;
     let root = doc.root_element();
     let Some(firmware) = root.children().find(|n| n.has_tag_name("firmware")) else {
         // Empty `<firmwareupdate/>` — no OTA staged for this firmware.

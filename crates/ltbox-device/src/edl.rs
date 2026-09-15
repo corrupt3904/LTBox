@@ -1440,8 +1440,8 @@ impl EdlSession {
     /// `flash_program_node`.
     fn preflight_rawprogram_super_images(program_xmls: &[PathBuf]) -> Result<()> {
         for xml_path in program_xmls {
-            let xml_content = std::fs::read_to_string(xml_path)?;
-            let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+            let xml_content = ltbox_core::xml::read(xml_path)?;
+            let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
                 EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
             })?;
             let xml_dir = xml_path.parent().unwrap_or(Path::new("."));
@@ -1586,8 +1586,8 @@ impl EdlSession {
         let sector_size = self.dev.fh_config().storage_sector_size;
         let mut total = 0u64;
         for xml_path in program_xmls {
-            let xml_content = std::fs::read_to_string(xml_path)?;
-            let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+            let xml_content = ltbox_core::xml::read(xml_path)?;
+            let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
                 EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
             })?;
             let xml_dir = xml_path.parent().unwrap_or(Path::new("."));
@@ -1639,8 +1639,8 @@ impl EdlSession {
     fn collect_wipe_erase_plan(program_xmls: &[PathBuf]) -> Result<Vec<WipeErasePlanEntry>> {
         let mut plan = Vec::new();
         for xml_path in program_xmls {
-            let xml_content = std::fs::read_to_string(xml_path)?;
-            let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+            let xml_content = ltbox_core::xml::read(xml_path)?;
+            let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
                 EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
             })?;
             for node in doc.descendants() {
@@ -1680,8 +1680,8 @@ impl EdlSession {
         wipe: bool,
         log: &mut Vec<String>,
     ) -> Result<()> {
-        let xml_content = std::fs::read_to_string(xml_path)?;
-        let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+        let xml_content = ltbox_core::xml::read(xml_path)?;
+        let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
             EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
         })?;
         let xml_dir = xml_path.parent().unwrap_or(Path::new("."));
@@ -1838,8 +1838,8 @@ impl EdlSession {
     }
 
     fn apply_patch_xml(&mut self, xml_path: &Path, log: &mut Vec<String>) -> Result<()> {
-        let xml_content = std::fs::read_to_string(xml_path)?;
-        let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+        let xml_content = ltbox_core::xml::read(xml_path)?;
+        let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
             EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
         })?;
 
@@ -2039,8 +2039,8 @@ fn select_devinfo_xml(paths: Vec<PathBuf>, allow_dp_filenames: bool) -> Option<P
 
 fn validate_dp_filename_usage(raw_xmls: &[PathBuf], allow_dp_filenames: bool) -> Result<()> {
     for xml_path in raw_xmls {
-        let xml_content = std::fs::read_to_string(xml_path)?;
-        let doc = roxmltree::Document::parse(&xml_content).map_err(|e| {
+        let xml_content = ltbox_core::xml::read(xml_path)?;
+        let doc = ltbox_core::xml::parse(&xml_content).map_err(|e| {
             EdlError::Session(format!("XML parse error in {}: {e}", xml_path.display()))
         })?;
         let xml_dir = xml_path.parent().unwrap_or(Path::new("."));
@@ -2218,7 +2218,7 @@ mod tests {
     #[test]
     fn require_destructive_coords_demands_lun_and_start_sector() {
         // Both present (start_sector may be a formula string) → accepted.
-        let ok = roxmltree::Document::parse(
+        let ok = ltbox_core::xml::parse(
             r#"<data><program physical_partition_number="0" start_sector="NUM_DISK_SECTORS-33."/></data>"#,
         )
         .unwrap();
@@ -2226,15 +2226,14 @@ mod tests {
 
         // Missing start_sector → rejected (would default to sector 0 = GPT).
         let no_start =
-            roxmltree::Document::parse(r#"<data><program physical_partition_number="2"/></data>"#)
+            ltbox_core::xml::parse(r#"<data><program physical_partition_number="2"/></data>"#)
                 .unwrap();
         assert!(
             require_destructive_coords(&first_node(&no_start, "program"), "<program>").is_err()
         );
 
         // Missing physical_partition_number → rejected (would default to LUN 0).
-        let no_lun =
-            roxmltree::Document::parse(r#"<data><erase start_sector="34"/></data>"#).unwrap();
+        let no_lun = ltbox_core::xml::parse(r#"<data><erase start_sector="34"/></data>"#).unwrap();
         assert!(require_destructive_coords(&first_node(&no_lun, "erase"), "<erase>").is_err());
     }
 

@@ -1910,8 +1910,8 @@ fn validate_canoe_rawprogram(
     let invalid = || ltbox_core::i18n::tr("err_abl_efisp_undetermined");
     let mut found_abl = false;
     for xml in xmls {
-        let content = std::fs::read_to_string(xml).map_err(|_| invalid())?;
-        let doc = roxmltree::Document::parse(&content).map_err(|_| invalid())?;
+        let content = ltbox_core::xml::read(xml).map_err(|_| invalid())?;
+        let doc = ltbox_core::xml::parse(&content).map_err(|_| invalid())?;
         for node in doc.descendants() {
             let label = node.attribute("label").unwrap_or("").trim();
             if !matches!(label, "abl_a" | "efisp") {

@@ -68,8 +68,8 @@ pub fn is_encrypted_manifest_filename(path: &Path) -> bool {
 /// Parse a `qsahara_device_programmer.xml` body into ordered
 /// `SaharaImage` entries.
 pub fn parse(xml: &str) -> Result<Vec<SaharaImage>> {
-    let doc = roxmltree::Document::parse(xml)
-        .map_err(|e| LtboxError::Other(format!("Sahara XML parse: {e}")))?;
+    let doc =
+        crate::xml::parse(xml).map_err(|e| LtboxError::Other(format!("Sahara XML parse: {e}")))?;
     let images_node = doc
         .root_element()
         .children()
@@ -110,7 +110,7 @@ pub type ImageSlots = Vec<Option<Vec<u8>>>;
 /// Returns `(slots, image_paths)` so callers can log both sides
 /// (which IDs were populated + which files were read).
 pub fn load_image_slots(xml_path: &Path) -> Result<(ImageSlots, Vec<PathBuf>)> {
-    let xml_body = std::fs::read_to_string(xml_path)
+    let xml_body = crate::xml::read(xml_path)
         .map_err(|e| LtboxError::Other(format!("Sahara XML read: {e}")))?;
     let entries = parse(&xml_body)?;
     let parent = xml_path
