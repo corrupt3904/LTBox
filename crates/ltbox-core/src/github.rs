@@ -21,6 +21,33 @@ static RESPONSE_CACHE: std::sync::LazyLock<Cache<String, Arc<String>>> =
             .build()
     });
 
+/// Validate before caching and coalesce concurrent misses for the same URL.
+/// Bypass requests neither read nor populate the shared cache.
+fn cached_json<T: serde::de::DeserializeOwned>(
+    cache: &Cache<String, Arc<String>>,
+    url: &str,
+    bypass: bool,
+    load: impl FnOnce() -> Result<String>,
+) -> Result<T> {
+    let parse = |body: &str| {
+        serde_json::from_str::<T>(body)
+            .map_err(|error| LtboxError::Download(format!("JSON parse error: {error}")))
+    };
+    if bypass {
+        return parse(&load()?);
+    }
+    let body = cache
+        .try_get_with(url.to_owned(), || {
+            let body = load()?;
+            parse(&body)?;
+            Ok::<_, LtboxError>(Arc::new(body))
+        })
+        .map_err(|error| {
+            Arc::try_unwrap(error).unwrap_or_else(|error| LtboxError::Other(error.to_string()))
+        })?;
+    parse(&body)
+}
+
 pub struct GitHubClient {
     owner_repo: String,
     agent: ureq::Agent,
@@ -143,24 +170,21 @@ impl GitHubClient {
     }
 
     fn get_json<T: serde::de::DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
-        // Up to 3 attempts with exponential backoff between retries
-        // (100ms → 400ms); transport errors and 5xx retry, 4xx short-circuits.
         let url = format!("{API_BASE}/repos/{}{endpoint}", self.owner_repo);
+        cached_json(&RESPONSE_CACHE, &url, self.bypass_cache, || {
+            self.fetch_json(&url)
+        })
+    }
 
-        if !self.bypass_cache
-            && let Some(cached) = RESPONSE_CACHE.get(&url)
-        {
-            return serde_json::from_str::<T>(&cached)
-                .map_err(|e| LtboxError::Download(format!("JSON parse error (cached): {e}")));
-        }
-
+    fn fetch_json(&self, url: &str) -> Result<String> {
+        // Retry transport errors and 5xx; do not retry 4xx.
         let mut last_err: Option<LtboxError> = None;
         for attempt in 0..3_u32 {
             if attempt > 0 {
                 let delay_ms = 100u64 * 4u64.pow(attempt - 1);
                 std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             }
-            let mut request = self.agent.get(&url);
+            let mut request = self.agent.get(url);
             if self.bypass_cache {
                 request = request.header("Cache-Control", "no-cache");
             }
@@ -179,11 +203,7 @@ impl GitHubClient {
                         .body_mut()
                         .read_to_string()
                         .map_err(|e| LtboxError::Download(format!("read body: {e}")))?;
-                    let parsed = serde_json::from_str::<T>(&body)
-                        .map_err(|e| LtboxError::Download(format!("JSON parse error: {e}")))?;
-                    // Only cache successful parses.
-                    RESPONSE_CACHE.insert(url.clone(), Arc::new(body));
-                    return Ok(parsed);
+                    return Ok(body);
                 }
                 Err(ureq::Error::StatusCode(code)) => {
                     if (400..500).contains(&code) {
@@ -455,6 +475,58 @@ fn normalize_workflow_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_validates_json_and_keeps_bypass_requests_isolated() {
+        let cache = Cache::new(4);
+        assert!(cached_json::<Vec<u8>>(&cache, "a", false, || Ok("{}".into())).is_err());
+        assert!(cache.get("a").is_none());
+        assert!(
+            cached_json::<Vec<u8>>(&cache, "a", false, || Err(LtboxError::Download(
+                "offline".into()
+            )))
+            .is_err()
+        );
+        assert_eq!(
+            cached_json::<Vec<u8>>(&cache, "a", false, || Ok("[1]".into())).unwrap(),
+            vec![1]
+        );
+        assert_eq!(
+            cached_json::<Vec<u8>>(&cache, "a", true, || Ok("[2]".into())).unwrap(),
+            vec![2]
+        );
+        assert_eq!(
+            cached_json::<Vec<u8>>(&cache, "a", false, || panic!("cached")).unwrap(),
+            vec![1]
+        );
+        assert!(cached_json::<u8>(&cache, "a", false, || panic!("cached")).is_err());
+    }
+
+    #[test]
+    fn concurrent_cache_misses_share_one_loader() {
+        use std::sync::{
+            Barrier,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let cache = Cache::new(4);
+        let barrier = Barrier::new(8);
+        let loads = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let value = cached_json::<u8>(&cache, "same", false, || {
+                        loads.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(20));
+                        Ok("42".into())
+                    })
+                    .unwrap();
+                    assert_eq!(value, 42);
+                });
+            }
+        });
+        assert_eq!(loads.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn missing_retention_metadata_is_an_api_error_not_an_empty_list() {
