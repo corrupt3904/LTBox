@@ -1,112 +1,132 @@
 # LTBox
 
-[🇺🇸 English](../README.md) / [🇰🇷 한국어](README_ko-KR.md)
+用 Rust 编写的桌面工具，用于刷写和修改受支持的联想平板固件。
 
-[![License: GPLv3][gpl-shield]][gpl]
-[![Rust][rust-shield]][rust]
-[![构建][ci-shield]][ci]
-[![最新发布][release-shield]][releases]
-[![下载量][downloads-shield]][releases]
+[English](../README.md) · [한국어](README_ko-KR.md)
 
-## ⚠️ 免责声明
+[![最新版本](https://img.shields.io/github/v/release/miner7222/LTBox)](https://github.com/miner7222/LTBox/releases/latest)
+[![构建](https://img.shields.io/github/actions/workflow/status/miner7222/LTBox/rust-ci.yml?branch=main&label=build)](https://github.com/miner7222/LTBox/actions/workflows/rust-ci.yml)
+[![许可证：GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](../LICENSE)
+[![下载量](https://img.shields.io/github/downloads/miner7222/LTBox/total)](https://github.com/miner7222/LTBox/releases/latest)
 
-**仅供教育用途。** 修改固件可能导致设备变砖、数据丢失或保修失效。开发者**不承担任何责任**，一切后果由用户自行承担。**使用风险自负。**
+LTBox 支持 **Windows、Linux 和 macOS**，提供固件刷写、区域转换、Root 和修复功能。可以按向导逐步操作，也可以使用高级工具单独处理各项任务。
 
----
+**[下载](https://github.com/miner7222/LTBox/releases/latest) · [安装与使用指南（英文）](https://miner7222.github.io/ltbox/en/index.html) · [反馈问题](https://github.com/miner7222/LTBox/issues)**
 
-## 🚀 快速开始
+## 使用前须知
 
-![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)
+> [!WARNING]
+> 修改固件可能导致设备无法启动、数据丢失或保修失效。LTBox 仅供学习使用，不提供任何担保。使用风险由用户自行承担，开发者不承担责任。
 
-请参阅英文文档中的 **[快速开始](https://miner7222.github.io/ltbox/en/index.html#windows)**。
+- 刷写前请核对**准确的型号代码**、固件区域和对应设备的操作说明。
+- 备份重要数据，并保留 LTBox 生成的备份。
+- 开始前请阅读确认页面。
 
----
+## 支持的设备
 
-## 📋 功能介绍
+LTBox 支持 **TB320FC、TB321FU、TB322FC、TB323FU、TB324ZC、TB376FC、TB390FU、TB520FU 和 TB710FU**。
 
-LTBox 是以侧边栏为核心的桌面 GUI，每个入口都会打开一个引导式向导。
+可用功能取决于型号、固件和连接模式。
 
-| 侧边栏条目 | 说明 |
-|---|---|
-| **仪表盘** | 设备状态、区域、最近文件夹、一键操作 |
-| **刷写固件** | 区域 → 目标 → 清除/保留 → 刷写一气呵成，区域转换与回滚全程自动处理 |
-| **系统更新** | 禁用或重新启用 OTA 更新；**启动恢复**可救回区域转换后因 OTA 而无法启动的设备 |
-| **获取 Root** | 使用 KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk（及分支）/ SKRoot Lite获取 Root |
-| **取消 Root** | 从之前的 Root 备份恢复原始引导镜像 |
-| **GPU 频率/电压** | 使用 KonaBess 修改设备 GPU 表，并重新构建和刷写受 AVB 保护的镜像 |
-| **重启** | 跳转到 System / Recovery / Bootloader / EDL |
-| **高级** | 手动逐步执行流水线步骤 — 见下方 |
-| **设置** | 语言（en/ko/zh/ru/ja）、主题（系统/浅色/深色）、强调色、默认 EDL 加载器路径 |
+| 设备 | 主要限制 |
+| --- | --- |
+| TB376FC / TB390FU | 不支持 Root、移除 Root、GPU 调整和启动修复。回滚信息仅供查看。 |
+| TB323FU / TB324ZC | 不支持 GKI Root、启动修复和 AVB 区域转换。 |
 
-### 高级
+## 安装与连接
 
-<details>
-<summary>逐步手动控制流水线，分为三个部分</summary>
+从 [GitHub Releases](https://github.com/miner7222/LTBox/releases/latest) 下载发行包，或参阅[各平台安装说明（英文）](https://miner7222.github.io/ltbox/en/index.html)，了解包管理器安装方式和 USB 设置。
 
-<br>
+Windows 用户可以通过 Scoop 安装：
 
-**区域/国家修改**
-- 区域转换 — 改写 `vendor_boot` 区域码（PRC ↔ ROW）并重建 vbmeta
-- 修补国家码 — 转储该机型的国家码分区，改写后刷写
+```powershell
+scoop bucket add ltbox https://github.com/miner7222/scoop-bucket
+scoop install ltbox
+```
 
-**AVB 镜像**
-- 获取镜像信息 — 显示一个或多个 `.img` 文件的 AVB 元数据
-- 检测回滚保护 — 比较设备与固件的回滚索引
-- 绕过回滚保护 — 修补链式分区镜像中的回滚索引
-- 重建 vbmeta — 以更新后的哈希描述符重建 `vbmeta.img`
+完成 USB 设置后，连接平板，在侧边栏选择任务并按向导操作。任务结束前请保持设备连接。
 
-**EDL 操作**
-- X 转 XML — 将 `.x` 固件文件解密为 rawprogram `.xml`
-- 分区读取 / 写入 — 按名称导出或刷写分区（GPT-by-name）
-- 物理存储导出 / 刷写 — 对整个 LUN 进行导出或刷写
-- 固件简易刷写 — 仅刷写，不做检查或修改（尽量贴近原厂刷机脚本）
+界面支持**英语、韩语、简体中文、俄语和日语**，可选择跟随系统、浅色或深色主题。
 
-</details>
+## 主要功能
 
----
+| 任务 | 功能 |
+| --- | --- |
+| 刷写固件 | 根据型号处理区域和回滚信息，选择是否清除数据，然后准备并刷写固件。 |
+| 获取或移除 Root | 使用所选 Root 方案修补启动镜像，或恢复备份的原厂镜像及相关验证元数据。 |
+| 管理系统更新 | 停用或重新启用 OTA 更新；区域转换后因 OTA 无法启动时，可在受支持的设备上使用启动修复。 |
+| 调整 GPU | 在受支持的设备上使用 KonaBess 修改频率和电压表，并重建相关 AVB 镜像。 |
+| 查看信息与重启 | 查看设备信息，并根据当前连接状态重启至 Android、恢复模式、引导加载程序、fastbootd 或 EDL。 |
 
-SKRoot Lite 可用于支持 Root 的机型，TB376FC / TB390FU 除外。补丁过程中会检查内核兼容性。SKRoot Pro 尚未启用。生成的密钥会单独显示，不写入日志，并保存在 Root 备份文件夹的 `skroot-root-key.txt` 中。
+### Root 方案
 
-## 🏗️ 项目结构
+支持 **Magisk、KernelSU、KernelSU Next、SukiSU Ultra、ReSukiSU、APatch、FolkPatch 和 SKRoot Lite**。可用性取决于设备和所选方案。
+
+### 高级工具
+
+- **区域与国家：**在 PRC 和 ROW 之间转换受支持的固件，或修改设备国家代码。
+- **AVB 与回滚：**查看镜像元数据和回滚信息，修改受支持的回滚索引，或重建 vbmeta。
+- **EDL 存储操作：**按名称读写分区，导出或刷写整个 LUN，或使用简易刷写工具刷写固件。
+- **固件文件：**将 `.x` 文件解密为 rawprogram XML。
+
+## 从源码构建
+
+通过 [rustup 安装 Rust](https://rustup.rs/)，并准备对应平台的构建工具：Windows 需要 Visual Studio C++ Build Tools 和 Windows SDK；macOS 需要 Xcode Command Line Tools；Linux 需要 C/C++ 工具链及 [CI 工作流](../.github/workflows/rust-ci.yml)中列出的 USB、GUI 开发库。
+
+Rust 工具链版本固定在 [rust-toolchain.toml](../rust-toolchain.toml) 中。
+
+```sh
+git clone https://github.com/miner7222/LTBox.git
+cd LTBox
+cargo build --release --locked -p ltbox-gui
+```
+
+生成的可执行文件为 `target/release/ltbox`，Windows 下为 `ltbox.exe`。
+
+### 源码结构
 
 | Crate | 职责 |
-|---|---|
-| `ltbox-core` | 基础原语 — 错误、设置、日志、HTTP 客户端（GitHub、nightly.link、联想）、加密、XML 解密、实时日志接收器 |
-| `ltbox-device` | 传输层 — ADB、Fastboot、EDL / QDL、串口探测、Windows 高通 USB 驱动检测 + 自动安装 |
-| `ltbox-patch` | 镜像流水线 — AVB（内置 AOSP testkey 规范）、引导镜像 ramdisk 补丁、区域转换、回滚索引处理、Root 方案集成 |
-| `ltbox-gui` | `iced` 桌面应用 — 构建 `ltbox` 二进制（Windows 上为 `ltbox.exe`） |
+| --- | --- |
+| [ltbox-core](../crates/ltbox-core) | 共用模型、设置、错误处理、日志、下载和固件工具。 |
+| [ltbox-device](../crates/ltbox-device) | ADB、Fastboot、EDL/QDL 通信，设备发现和 USB 驱动集成。 |
+| [ltbox-patch](../crates/ltbox-patch) | 启动与 AVB 镜像处理、区域转换、回滚处理和 Root 方案集成。 |
+| [ltbox-gui](../crates/ltbox-gui) | iced 桌面应用和操作向导，生成 `ltbox` 可执行文件。 |
 
----
+## 帮助与贡献
 
-## 🙏 致谢
+请先查阅[使用指南（英文）](https://miner7222.github.io/ltbox/en/index.html)。如问题仍未解决，请[提交 Issue](https://github.com/miner7222/LTBox/issues) 并提供：
 
-- **Anonymous [ㅇㅇ](https://gall.dcinside.com/board/lists?id=tabletpc)**
+- LTBox 版本和电脑操作系统。
+- 准确的平板型号、固件版本与区域、连接模式。
+- 复现步骤、预期行为和实际结果。
+- 相关日志或截图，请先删除设备标识、个人路径和机密信息。不要附上 Root 密钥。
+
+欢迎提交错误修复、设备相关发现、文档改进和翻译。界面翻译位于 [crates/ltbox-gui/lang](../crates/ltbox-gui/lang)，请保持各语言的翻译键和占位符一致。
+
+修改代码后，请运行相关检查：
+
+```sh
+cargo fmt --all -- --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+```
+
+运行已忽略的测试或实际下载检查前，请确认所需条件。
+
+LTBox 是个人业余项目，**不接受捐款、赞助或其他形式的资金支持**。
+
+## 致谢
+
+感谢以下朋友分享的发现、信息和指南，为 LTBox 的开发提供了帮助。
+
+- **匿名用户 [ㅇㅇ](https://gall.dcinside.com/board/lists?id=tabletpc)**
 - **[갓파더](https://ppomppu.co.kr/zboard/view.php?id=androidtab&page=1&divpage=38&no=197457)**
 - **[limzei89](https://note.com/limzei89/n/nd5217eb57827)**
 - **[hitin911](https://xdaforums.com/m/hitin911.12861404/)**
 - **[corrupt3904](https://gall.dcinside.com/mgallery/board/view/?id=andtabcus&no=20290)**
 
----
+## 许可证
 
-## 💛 支持
+LTBox 采用 [GPL-3.0-or-later](../LICENSE) 许可证。第三方组件遵循各自的许可证。
 
-LTBox 是个人业余项目，不接受任何形式的资金支持 —— 不接受捐赠，也不接受赞助。但欢迎随时参与贡献：提交 issue、pull request 或翻译都会很有帮助。
-
----
-
-## 📄 许可证
-
-本作品基于 [GPL-3.0-or-later][gpl] 许可证发布。
-
-[![GPLv3][gpl-image]][gpl]
-
-[gpl]: https://www.gnu.org/licenses/gpl-3.0
-[gpl-image]: https://www.gnu.org/graphics/gplv3-127x51.png
-[gpl-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
-[rust]: https://www.rust-lang.org
-[rust-shield]: https://img.shields.io/badge/Rust-2024_edition-000000?logo=rust&logoColor=white
-[ci]: https://github.com/miner7222/LTBox/actions/workflows/rust-ci.yml
-[ci-shield]: https://img.shields.io/github/actions/workflow/status/miner7222/LTBox/rust-ci.yml?branch=main&label=build&logo=github
-[releases]: https://github.com/miner7222/LTBox/releases/latest
-[release-shield]: https://img.shields.io/github/v/release/miner7222/LTBox?logo=github
-[downloads-shield]: https://img.shields.io/github/downloads/miner7222/LTBox/total?logo=github
+[![GPLv3](https://www.gnu.org/graphics/gplv3-127x51.png)](https://www.gnu.org/licenses/gpl-3.0)

@@ -1,84 +1,123 @@
 # LTBox
 
-[🇰🇷 한국어](READMEs/README_ko-KR.md) / [🇨🇳 简体中文](READMEs/README_zh-CN.md)
+A desktop tool for flashing and modifying firmware on supported Lenovo tablets, written in Rust.
 
-[![License: GPLv3][gpl-shield]][gpl]
-[![Rust][rust-shield]][rust]
-[![Build][ci-shield]][ci]
-[![Latest release][release-shield]][releases]
-[![Downloads][downloads-shield]][releases]
+[한국어](READMEs/README_ko-KR.md) · [简体中文](READMEs/README_zh-CN.md)
 
-## ⚠️ Disclaimer
+[![Latest release](https://img.shields.io/github/v/release/miner7222/LTBox)](https://github.com/miner7222/LTBox/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/miner7222/LTBox/rust-ci.yml?branch=main&label=build)](https://github.com/miner7222/LTBox/actions/workflows/rust-ci.yml)
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/miner7222/LTBox/total)](https://github.com/miner7222/LTBox/releases/latest)
 
-**Educational purposes only.** Modifying firmware can brick your device, cause data loss, or void your warranty. The developer assumes **no liability**. You are solely responsible. **Use at your own risk.**
+LTBox brings firmware flashing, region conversion, rooting, and recovery tools into a native GUI for **Windows, Linux, and macOS**, with guided workflows and advanced tools for individual operations.
 
----
+**[Download](https://github.com/miner7222/LTBox/releases/latest) · [Installation and user guide](https://miner7222.github.io/ltbox/en/index.html) · [Report an issue](https://github.com/miner7222/LTBox/issues)**
 
-## 🚀 Quick Start
+## Before you start
 
-![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)
+> [!WARNING]
+> Modifying firmware can make your device unbootable, erase data, or void your warranty. LTBox is provided for educational purposes, without warranty. You use it at your own risk; the developer assumes no liability.
 
-See **[Quick Start](https://miner7222.github.io/ltbox/en/index.html#windows)** in the documentation.
+- Check the **exact model code**, firmware region, and instructions for your device before flashing.
+- Back up important data and keep any backups created by LTBox.
+- Read the confirmation screen before starting.
 
----
+## Supported devices
 
-## 📋 What Can It Do?
+LTBox supports **TB320FC, TB321FU, TB322FC, TB323FU, TB324ZC, TB376FC, TB390FU, TB520FU, and TB710FU**.
 
-LTBox is a sidebar-driven desktop GUI; each entry opens a guided wizard.
+Features depend on the model, firmware, and connection mode:
 
-| Sidebar entry | What it does |
-|---|---|
-| **Dashboard** | Device status, region, recent folders, one-click actions |
-| **Flash Firmware** | One flow from region → target → wipe/keep → flash, with region conversion and rollback handled end-to-end |
-| **System Updates** | Disable or re-enable OTA updates; **Boot Recovery** revives a region-converted device that won't boot after an OTA |
-| **Root Device** | Root with KernelSU / KernelSU Next / SukiSU Ultra / ReSukiSU / APatch / FolkPatch / Magisk (+ forks) / SKRoot Lite |
-| **Unroot Device** | Restore the stock boot image from an earlier root backup |
-| **GPU Clock/Voltage** | Edit the device GPU table with KonaBess, then rebuild and flash the AVB-protected images |
-| **Reboot** | Jump to System, Recovery, Bootloader, or EDL |
-| **Advanced** | Run individual pipeline steps by hand — see below |
-| **Settings** | Language (en/ko/zh/ru/ja), theme (system/light/dark), accent color, default EDL loader path |
+| Device group | Important limitations |
+| --- | --- |
+| TB376FC / TB390FU | Root, unroot, GPU tuning, and boot rescue are unavailable. Rollback information is read-only. |
+| TB323FU / TB324ZC | GKI rooting, boot rescue, and AVB region conversion are unavailable. |
 
-### Advanced
+## Install and connect
 
-<details>
-<summary>Step-by-step manual control over the pipeline, grouped into three sections</summary>
+Get a packaged build from [GitHub Releases](https://github.com/miner7222/LTBox/releases/latest), or follow the [platform-specific installation instructions](https://miner7222.github.io/ltbox/en/index.html) for package managers and USB setup.
 
-<br>
+On Windows, Scoop is available:
 
-**Region/Country Edit**
-- Convert Region — rewrite the `vendor_boot` region code (PRC ↔ ROW) and rebuild vbmeta
-- Change Country Code — dump the model's country partitions, rewrite the code, flash
+```powershell
+scoop bucket add ltbox https://github.com/miner7222/scoop-bucket
+scoop install ltbox
+```
 
-**AVB Image**
-- Obtain Image Info — show AVB metadata for one or more `.img` files
-- Detect Rollback Protection — compare the rollback index on the device against the firmware
-- Bypass Rollback Protection — patch the rollback index in chained partition images
-- Rebuild vbmeta — rebuild `vbmeta.img` with updated hash descriptors
+After USB setup, connect your tablet, choose a task from the sidebar, and follow the wizard. Keep the device connected until the operation finishes.
 
-**EDL Operations**
-- Convert X to XML — decrypt `.x` firmware files to rawprogram `.xml`
-- Read / Write Partitions — dump or flash partitions by name (GPT-by-name)
-- Dump / Flash Physical Storage — dump or flash whole LUNs
-- Firmware Simple Flasher — flash only, no checks or edits (as close as possible to the stock flash script)
+The interface supports **English, Korean, Simplified Chinese, Russian, and Japanese**, with system, light, and dark themes.
 
-</details>
+## What you can do
 
----
+| Task | Capabilities |
+| --- | --- |
+| Flash firmware | Prepare and flash firmware, with model-specific region and rollback handling and data-wipe choices. |
+| Root and unroot | Patch supported boot images with a selected root provider; restore backed-up stock images and associated verification metadata. |
+| Manage system updates | Disable or re-enable OTA updates; use boot recovery on supported devices after a region-converted OTA fails to boot. |
+| Tune the GPU | Edit clock and voltage tables with KonaBess and rebuild the affected AVB images on supported models. |
+| Inspect and reboot | View device information and reboot into Android, recovery, bootloader, fastbootd, or EDL as supported by the current connection. |
 
-SKRoot Lite is available on root-supported models; TB376FC / TB390FU remain excluded. Kernel compatibility is checked during patching. SKRoot Pro is not enabled. The generated key is shown separately from logs and saved as `skroot-root-key.txt` in the root backup folder.
+### Root providers
 
-## 🏗️ Project Layout
+Supported integrations include **Magisk, KernelSU, KernelSU Next, SukiSU Ultra, ReSukiSU, APatch, FolkPatch, and SKRoot Lite**. Availability depends on the device and provider.
 
-| Crate | Role |
-|---|---|
-| `ltbox-core` | Primitives — errors, settings, logging, HTTP clients (GitHub, nightly.link, Lenovo), crypto, XML decrypt, live-log sink |
-| `ltbox-device` | Transport — ADB, Fastboot, EDL / QDL, serial-port discovery, Windows Qualcomm USB driver probe + auto-install |
-| `ltbox-patch` | Image pipeline — AVB (bundled AOSP test-key specs), boot-image ramdisk patching, region conversion, rollback-index handling, root-provider integration |
-| `ltbox-gui` | `iced` desktop app — builds the `ltbox` binary (`ltbox.exe` on Windows) |
+### Advanced tools
 
----
+- **Region and country:** convert supported firmware between PRC and ROW, or change the device country code.
+- **AVB and rollback:** inspect image metadata and rollback information, modify supported rollback indices, and rebuild vbmeta.
+- **EDL storage:** read or write named partitions, dump or flash whole LUNs, and flash firmware through the simple flasher.
+- **Firmware files:** decrypt `.x` files into rawprogram XML.
 
-## 🙏 Credits
+## Build from source
+
+Install [Rust through rustup](https://rustup.rs/) and native build tools: Visual Studio C++ Build Tools and the Windows SDK on Windows, Xcode Command Line Tools on macOS, or a C/C++ toolchain and the USB/GUI development libraries listed in the [CI workflow](.github/workflows/rust-ci.yml) on Linux.
+
+The repository pins its Rust toolchain in [rust-toolchain.toml](rust-toolchain.toml).
+
+```sh
+git clone https://github.com/miner7222/LTBox.git
+cd LTBox
+cargo build --release --locked -p ltbox-gui
+```
+
+The executable is `target/release/ltbox` (`ltbox.exe` on Windows).
+
+### Source layout
+
+| Crate | Responsibility |
+| --- | --- |
+| [ltbox-core](crates/ltbox-core) | Shared models, settings, errors, logging, downloads, and firmware utilities. |
+| [ltbox-device](crates/ltbox-device) | ADB, Fastboot, EDL/QDL transport, device discovery, and USB driver integration. |
+| [ltbox-patch](crates/ltbox-patch) | Boot and AVB image processing, region conversion, rollback handling, and root providers. |
+| [ltbox-gui](crates/ltbox-gui) | The iced desktop application and guided workflows; produces the `ltbox` executable. |
+
+## Help and contributions
+
+Start with the [user guide](https://miner7222.github.io/ltbox/en/index.html). If a problem remains, [open an issue](https://github.com/miner7222/LTBox/issues) with:
+
+- LTBox version and host operating system.
+- Exact tablet model, firmware version and region, and connection mode.
+- Steps to reproduce the problem, expected behavior, and actual result.
+- Relevant logs or screenshots, with device identifiers, personal paths, and secrets removed. Do not attach root keys.
+
+Bug fixes, device findings, documentation improvements, and translations are welcome. UI translations live in [crates/ltbox-gui/lang](crates/ltbox-gui/lang); keep translation keys and placeholders consistent across languages.
+
+For code changes, run the relevant checks:
+
+```sh
+cargo fmt --all -- --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+```
+
+Check prerequisites before running ignored tests or live download checks.
+
+LTBox is a personal hobby project and does **not** accept donations, sponsorships, or other financial support.
+
+## Credits
+
+Thanks to the following people for sharing findings, information, and guides that helped shape LTBox.
 
 - **Anonymous [ㅇㅇ](https://gall.dcinside.com/board/lists?id=tabletpc)**
 - **[갓파더](https://ppomppu.co.kr/zboard/view.php?id=androidtab&page=1&divpage=38&no=197457)**
@@ -86,27 +125,8 @@ SKRoot Lite is available on root-supported models; TB376FC / TB390FU remain excl
 - **[hitin911](https://xdaforums.com/m/hitin911.12861404/)**
 - **[corrupt3904](https://gall.dcinside.com/mgallery/board/view/?id=andtabcus&no=20290)**
 
----
+## License
 
-## 💛 Support
+LTBox is licensed under [GPL-3.0-or-later](LICENSE). Third-party components retain their respective licenses.
 
-LTBox is a personal hobby project and does not accept financial support of any kind — no donations, no sponsorships. Contributions, on the other hand, are always welcome: issues, pull requests, and translations all help.
-
----
-
-## 📄 License
-
-This work is licensed under [GPL-3.0-or-later][gpl].
-
-[![GPLv3][gpl-image]][gpl]
-
-[gpl]: https://www.gnu.org/licenses/gpl-3.0
-[gpl-image]: https://www.gnu.org/graphics/gplv3-127x51.png
-[gpl-shield]: https://img.shields.io/badge/License-GPLv3-blue.svg
-[rust]: https://www.rust-lang.org
-[rust-shield]: https://img.shields.io/badge/Rust-2024_edition-000000?logo=rust&logoColor=white
-[ci]: https://github.com/miner7222/LTBox/actions/workflows/rust-ci.yml
-[ci-shield]: https://img.shields.io/github/actions/workflow/status/miner7222/LTBox/rust-ci.yml?branch=main&label=build&logo=github
-[releases]: https://github.com/miner7222/LTBox/releases/latest
-[release-shield]: https://img.shields.io/github/v/release/miner7222/LTBox?logo=github
-[downloads-shield]: https://img.shields.io/github/downloads/miner7222/LTBox/total?logo=github
+[![GPLv3](https://www.gnu.org/graphics/gplv3-127x51.png)](https://www.gnu.org/licenses/gpl-3.0)
