@@ -112,11 +112,7 @@ jobs:
           key: xwin-${{ runner.os }}-${{ env.CARGO_XWIN_VERSION }}-x86_64-pc-windows-msvc-v2
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
-          cache-bin: false
+        uses: ./.github/actions/cargo-sources
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -210,11 +206,7 @@ jobs:
           key: xwin-${{ runner.os }}-${{ env.CARGO_XWIN_VERSION }}-${{ matrix.target }}-v2
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
-          cache-bin: false
+        uses: ./.github/actions/cargo-sources
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -337,11 +329,9 @@ jobs:
           rustup target add ${{ matrix.target }}
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-sources
         with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
-          cache-bin: false
+          save: ${{ github.ref == 'refs/heads/main' && runner.arch == 'X64' }}
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -425,11 +415,9 @@ jobs:
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
+        uses: ./.github/actions/cargo-sources
         with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
-          cache-bin: false
+          save: ${{ github.ref == 'refs/heads/main' }}
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -502,11 +490,7 @@ jobs:
           rustup target add ${{ matrix.target }}
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cargo-sources-macos-${{ matrix.arch }}
-          cache-targets: false
-          cache-bin: false
+        uses: ./.github/actions/cargo-sources
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -589,11 +573,7 @@ jobs:
         run: rustup show
 
       - name: Cargo source cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: cargo-sources-${{ runner.os }}-${{ runner.arch }}
-          cache-targets: false
-          cache-bin: false
+        uses: ./.github/actions/cargo-sources
 
       - name: sccache
         uses: mozilla-actions/sccache-action@v0.0.11

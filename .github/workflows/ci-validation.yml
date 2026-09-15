@@ -29,6 +29,8 @@ jobs:
         run: actionlint -color -ignore 'unexpected key "queue" for "concurrency" section'
       - name: Validate packaging shell scripts
         run: shellcheck packaging/linux/*.sh misc/macos/make-app.sh
+      - name: Test CI helpers
+        run: python3 -m unittest discover -s ci -v
       - name: Test packaging policies and manifest rendering
         run: python3 -m unittest discover -s packaging -v
 
