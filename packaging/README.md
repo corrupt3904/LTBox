@@ -156,3 +156,12 @@ Both formats install:
 The Debian package installs the GPL text as
 `/usr/share/doc/ltbox/copyright`. The RPM installs it as
 `/usr/share/licenses/ltbox/LICENSE`.
+
+## CI validation
+
+Pull requests run actionlint, ShellCheck, and packaging fixture tests. Native
+Linux build jobs create and install DEB/RPM packages on Ubuntu 24.04, Debian 13,
+and current Fedora containers for both x86_64 and arm64. `ldd -r` verifies the
+installed binary's libraries and relocations without starting device discovery.
+Ubuntu 24.04 is the release build baseline; older glibc environments are not
+covered. This does not replace GUI or physical-device testing.

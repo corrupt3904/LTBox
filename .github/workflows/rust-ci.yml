@@ -306,10 +306,7 @@ jobs:
   build-linux:
     needs: release-version
     name: Build linux_${{ matrix.arch }}
-    # Each matrix entry declares its runner explicitly. x86_64 tracks
-    # ubuntu-latest so CI follows GitHub's current Linux image. arm64 uses
-    # GitHub's native arm64 runner (ubuntu-24.04-arm) so the build is
-    # host-native rather than a cross-toolchain shim.
+    # Both architectures use Ubuntu 24.04 as the release ABI baseline.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -318,7 +315,7 @@ jobs:
         include:
           - arch: x86_64
             target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: arm64
             target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
@@ -374,6 +371,9 @@ jobs:
 
       - name: cargo build --release
         run: cargo build --release --locked --target ${{ matrix.target }} -p ltbox-gui
+
+      - name: Test native Linux packages
+        run: bash packaging/linux/test_packages.sh target/${{ matrix.target }}/release/ltbox
 
       - name: Stage artifact
         id: stage
@@ -567,6 +567,9 @@ jobs:
 
       - name: cargo test --workspace
         run: cargo test --workspace --locked
+
+      - name: Test GUI demo behavior
+        run: cargo test -p ltbox-gui --features demo --locked
 
   test-linux:
     # Linux native test gate — distinct from the Windows test job
