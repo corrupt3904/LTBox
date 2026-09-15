@@ -98,10 +98,9 @@ serialport = "4"
 
 # GUI
 iced = { version = "0.14", features = ["tokio", "svg", "image", "advanced", "canvas"] }
-iced_aw = { version = "0.14", default-features = false, features = ["drop_down"] }
 rfd = "0.17"
 dirs = "6"
-fs2 = "0.4"
+fs4 = { version = "1", default-features = false }
 dark-light = "3"
 sys-locale = "0.3"
 semver = "1"
@@ -110,7 +109,6 @@ windows-sys = { version = "0.61", features = ["Win32_UI_Shell", "Win32_UI_Window
 winresource = "0.1"
 tokio = { version = "1", features = ["rt"] }
 gptman = "3"
-os_pipe = "1"
 
 # External tool crates (git dependencies)
 avbtool-rs = { git = "https://github.com/miner7222/avbtool-rs", tag = "v0.2.0" }

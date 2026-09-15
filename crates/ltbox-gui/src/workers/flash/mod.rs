@@ -691,7 +691,7 @@ fn decompress_zst_file(
         // per-output limit instead of a fixed image-size cap because firmware
         // images legitimately span many tens of GiB.
         let output_limit =
-            zstd_output_limit(fs2::available_space(dst_parent).map_err(|e| e.to_string())?)?;
+            zstd_output_limit(fs4::available_space(dst_parent).map_err(|e| e.to_string())?)?;
         let input = std::fs::File::open(src).map_err(|e| e.to_string())?;
         // `Decoder::new` wraps the reader in its own `BufReader`.
         let decoder = zstd::stream::Decoder::new(input).map_err(|e| e.to_string())?;

@@ -43,7 +43,7 @@ fn install_inner() -> Queue {
 
     let queue: Queue = Arc::new(Mutex::new(Vec::new()));
 
-    let (mut reader, writer) = match os_pipe::pipe() {
+    let (mut reader, writer) = match std::io::pipe() {
         Ok(p) => p,
         Err(_) => return queue,
     };
@@ -74,7 +74,7 @@ fn install_inner() -> Queue {
             dup
         }
     };
-    // SAFETY: both handles live until process exit; `os_pipe::PipeWriter`
+    // SAFETY: both handles live until process exit; `std::io::PipeWriter`
     // was consumed via `into_raw_handle`, so nothing else closes them.
     unsafe {
         use windows_sys::Win32::System::Console::{

@@ -1,7 +1,6 @@
 //! Acquire the application guard before starting workers or shared workspaces.
-use fs2::FileExt;
 use std::{
-    fs::{File, OpenOptions},
+    fs::{File, OpenOptions, TryLockError},
     io,
     path::Path,
     time::{Duration, Instant},
@@ -16,16 +15,16 @@ pub(crate) fn acquire(path: &Path, wait_for_update: bool) -> io::Result<Option<F
         .open(path)?;
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        match file.try_lock_exclusive() {
+        match file.try_lock() {
             Ok(()) => return Ok(Some(file)),
-            Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
+            Err(TryLockError::WouldBlock) => {
                 if wait_for_update && Instant::now() < deadline {
                     std::thread::sleep(Duration::from_millis(100));
                 } else {
                     return Ok(None);
                 }
             }
-            Err(error) => return Err(error),
+            Err(TryLockError::Error(error)) => return Err(error),
         }
     }
 }
