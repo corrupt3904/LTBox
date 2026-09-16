@@ -1,9 +1,8 @@
 //! EDL loader discovery + validation helpers, extracted from `main.rs`.
 
 /// File-dialog / recent-chip extension filter for the EDL loader picker:
-/// a stock `.melf` Firehose loader or the `.xml` Sahara manifest.
-/// Resolver compatibility with encrypted/legacy inputs is separate.
-pub(crate) const LOADER_PICKER_EXTS: &[&str] = &["melf", "xml"];
+/// a stock `.melf` loader or a plaintext/encrypted Sahara manifest.
+pub(crate) const LOADER_PICKER_EXTS: &[&str] = &["melf", "xml", "x"];
 
 /// User-facing choices, independent of the resolver's legacy compatibility.
 pub(crate) fn loader_picker_extensions(
@@ -11,7 +10,7 @@ pub(crate) fn loader_picker_extensions(
     manifest: bool,
 ) -> &'static [&'static str] {
     if manifest {
-        &["xml"]
+        &["xml", "x"]
     } else if model_known {
         &["melf"]
     } else {
@@ -296,7 +295,7 @@ mod picker_filter_tests {
             "D:/Downloads/abl.ELF",
             "D:/Firmware/loader.MeLf",
             "D:/Firmware/manifest.XML",
-            "D:/Firmware/manifest.x",
+            "D:/Firmware/qsahara_device_programmer.X",
             "D:/Firmware/payload.mbn",
         ];
         let visible = |known, manifest| {
@@ -307,8 +306,11 @@ mod picker_filter_tests {
                 })
                 .collect::<Vec<_>>()
         };
-        assert_eq!(visible(false, false), vec![history[2], history[3]]);
+        assert_eq!(
+            visible(false, false),
+            vec![history[2], history[3], history[4]]
+        );
         assert_eq!(visible(true, false), vec![history[2]]);
-        assert_eq!(visible(true, true), vec![history[3]]);
+        assert_eq!(visible(true, true), vec![history[3], history[4]]);
     }
 }

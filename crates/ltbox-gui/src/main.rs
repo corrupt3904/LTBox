@@ -5887,12 +5887,14 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_loader_picker_accepts_melf_and_xml() {
+    fn loader_picker_accepts_encrypted_manifests_for_supported_models() {
         let mut app = App::default();
         let melf = std::path::Path::new("xbl_s_devprg_ns.melf");
         let xml = std::path::Path::new("qsahara_device_programmer.xml");
 
-        assert_eq!(app.loader_picker_exts(), &["melf", "xml"]);
+        assert_eq!(app.loader_picker_exts(), &["melf", "xml", "x"]);
+        let encrypted = std::path::Path::new("qsahara_device_programmer.X");
+        assert!(app.loader_fits_model(encrypted));
         assert!(app.loader_fits_model(melf));
         assert!(app.loader_fits_model(xml));
         assert_eq!(
@@ -5905,19 +5907,26 @@ mod tests {
         assert_eq!(app.loader_picker_exts(), &["melf"]);
         assert!(app.loader_fits_model(melf));
         assert!(!app.loader_fits_model(xml));
+        assert!(!app.loader_fits_model(encrypted));
         assert_eq!(
             app.loader_picker_subtitle(),
             app.t("loader_picker_subtitle_standard")
         );
 
         app.device.model = "TB323FU".into();
-        assert_eq!(app.loader_picker_exts(), &["xml"]);
+        assert_eq!(app.loader_picker_exts(), &["xml", "x"]);
+        assert!(app.loader_fits_model(encrypted));
         assert!(!app.loader_fits_model(melf));
         assert!(app.loader_fits_model(xml));
         assert_eq!(
             app.loader_picker_subtitle(),
             app.t("loader_picker_subtitle_manifest")
         );
+        app.device.model = "TB324ZC".into();
+        assert_eq!(app.loader_picker_exts(), &["xml", "x"]);
+        assert!(app.loader_fits_model(encrypted));
+        assert!(app.loader_fits_model(xml));
+        assert!(!app.loader_fits_model(melf));
     }
 
     #[test]
