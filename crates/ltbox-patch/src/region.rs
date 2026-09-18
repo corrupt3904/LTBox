@@ -546,32 +546,58 @@ pub fn patch_country_code(
     Ok(true)
 }
 
-/// Replace the Xiaoxin Pro 13 / Idea Tab Pro Gen 2 `proinfo` channel field
-/// from `consumer` to
-/// `commercial`. The shorter source token must be NUL-delimited and have two
-/// further NUL bytes after its terminator, leaving a NUL terminator after the
-/// longer replacement. An already-`commercial` image is a successful no-op.
-pub fn patch_proinfo_channel(input: &Path, output: &Path) -> Result<bool> {
-    const FROM: &[u8] = b"consumer";
-    const TO: &[u8] = b"commercial";
+/// Channel identity stored in the Xiaoxin Pro 13 / Idea Tab Pro Gen 2
+/// `proinfo` partition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProinfoChannel {
+    Consumer,
+    Commercial,
+}
+
+impl ProinfoChannel {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Consumer => "consumer",
+            Self::Commercial => "commercial",
+        }
+    }
+
+    pub const fn opposite(self) -> Self {
+        match self {
+            Self::Consumer => Self::Commercial,
+            Self::Commercial => Self::Consumer,
+        }
+    }
+}
+
+/// Set the Xiaoxin Pro 13 / Idea Tab Pro Gen 2 `proinfo` channel field.
+///
+/// Both tokens must be NUL-delimited. Growing `consumer` to `commercial`
+/// additionally requires two NUL bytes after the original terminator, leaving
+/// a terminator after the longer replacement. Shrinking in the other direction
+/// zero-fills the vacated bytes. An image already carrying `target` is a
+/// successful no-op.
+pub fn patch_proinfo_channel(input: &Path, output: &Path, target: ProinfoChannel) -> Result<bool> {
+    let from = target.opposite().as_str().as_bytes();
+    let to = target.as_str().as_bytes();
 
     let mut data = fs::read(input)
         .map_err(|e| LtboxError::Patch(format!("Cannot read {}: {e}", input.display())))?;
 
-    let commercial_present = data.windows(TO.len()).enumerate().any(|(i, window)| {
-        window == TO && i > 0 && data[i - 1] == 0 && data.get(i + TO.len()) == Some(&0)
+    let target_present = data.windows(to.len()).enumerate().any(|(i, window)| {
+        window == to && i > 0 && data[i - 1] == 0 && data.get(i + to.len()) == Some(&0)
     });
 
-    let consumer = data
-        .windows(FROM.len())
+    let source = data
+        .windows(from.len())
         .enumerate()
         .find_map(|(i, window)| {
-            (window == FROM && i > 0 && data[i - 1] == 0 && data.get(i + FROM.len()) == Some(&0))
+            (window == from && i > 0 && data[i - 1] == 0 && data.get(i + from.len()) == Some(&0))
                 .then_some(i)
         });
 
-    let Some(offset) = consumer else {
-        if commercial_present {
+    let Some(offset) = source else {
+        if target_present {
             if input != output {
                 fs::copy(input, output)
                     .map_err(|e| LtboxError::Patch(format!("Copy failed: {e}")))?;
@@ -583,15 +609,22 @@ pub fn patch_proinfo_channel(input: &Path, output: &Path) -> Result<bool> {
         ));
     };
 
-    let terminator = offset + FROM.len();
-    if data.get(terminator + 1) != Some(&0) || data.get(terminator + 2) != Some(&0) {
-        return Err(LtboxError::Patch(
-            "proinfo consumer channel lacks two trailing NUL bytes".to_string(),
-        ));
+    if to.len() > from.len() {
+        let terminator = offset + from.len();
+        let growth = to.len() - from.len();
+        if (1..=growth).any(|extra| data.get(terminator + extra) != Some(&0)) {
+            return Err(LtboxError::Patch(format!(
+                "proinfo {} channel lacks {growth} trailing NUL bytes",
+                target.opposite().as_str()
+            )));
+        }
     }
 
-    data[offset..offset + TO.len()].copy_from_slice(TO);
-    if &data[offset..offset + TO.len()] != TO || data.get(offset + TO.len()) != Some(&0) {
+    data[offset..offset + to.len()].copy_from_slice(to);
+    if to.len() < from.len() {
+        data[offset + to.len()..offset + from.len()].fill(0);
+    }
+    if &data[offset..offset + to.len()] != to || data.get(offset + to.len()) != Some(&0) {
         return Err(LtboxError::Patch(
             "proinfo channel post-patch verification failed".to_string(),
         ));
@@ -880,7 +913,7 @@ mod tests {
         data[0x0e1a..0x0e22].copy_from_slice(b"consumer");
         fs::write(&src, &data).unwrap();
 
-        assert!(patch_proinfo_channel(&src, &out).unwrap());
+        assert!(patch_proinfo_channel(&src, &out, ProinfoChannel::Commercial).unwrap());
         let patched = fs::read(&out).unwrap();
         assert_eq!(&patched[0x0e1a..0x0e24], b"commercial");
         assert_eq!(patched[0x0e24], 0);
@@ -888,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn patch_proinfo_channel_is_idempotent_for_commercial() {
+    fn patch_proinfo_channel_flips_commercial_to_consumer() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("proinfo.img");
         let out = dir.path().join("proinfo.patched.img");
@@ -896,7 +929,22 @@ mod tests {
         data[32..42].copy_from_slice(b"commercial");
         fs::write(&src, &data).unwrap();
 
-        assert!(!patch_proinfo_channel(&src, &out).unwrap());
+        assert!(patch_proinfo_channel(&src, &out, ProinfoChannel::Consumer).unwrap());
+        let patched = fs::read(&out).unwrap();
+        assert_eq!(&patched[32..40], b"consumer");
+        assert_eq!(&patched[40..43], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn patch_proinfo_channel_is_idempotent_for_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("proinfo.img");
+        let out = dir.path().join("proinfo.patched.img");
+        let mut data = vec![0u8; 256];
+        data[32..42].copy_from_slice(b"commercial");
+        fs::write(&src, &data).unwrap();
+
+        assert!(!patch_proinfo_channel(&src, &out, ProinfoChannel::Commercial).unwrap());
         assert_eq!(fs::read(out).unwrap(), data);
     }
 
@@ -910,7 +958,9 @@ mod tests {
         data[41] = 1;
         fs::write(&src, data).unwrap();
 
-        let error = patch_proinfo_channel(&src, &out).unwrap_err().to_string();
+        let error = patch_proinfo_channel(&src, &out, ProinfoChannel::Commercial)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("trailing NUL"), "got: {error}");
         assert!(!out.exists());
     }
