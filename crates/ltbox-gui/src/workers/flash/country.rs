@@ -53,7 +53,7 @@ pub(crate) fn change_country_worker(
         &device_model,
         None,
         Some(&target_code),
-        false,
+        None,
         None,
         &ll,
         &mut log,

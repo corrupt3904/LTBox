@@ -1749,12 +1749,13 @@ pub(crate) fn flash_worker(
     }
 
     // Country-code/channel patch is best-effort after firmware flash. A
-    // TB376FC↔TB390FU cross-flash must flip proinfo even when no country target
-    // was requested; in that case only proinfo is dumped and flashed.
+    // TB376FC↔TB390FU cross-flash must set proinfo for the target firmware even
+    // when no country target was requested; in that case only proinfo is dumped
+    // and flashed.
     let target_code = cfg.country_action.target();
-    let flip_proinfo_channel =
-        xiaoxin_pro13_cross_model(&device_model, firmware_fingerprint.as_deref());
-    if target_code.is_some() || flip_proinfo_channel {
+    let proinfo_channel_target =
+        xiaoxin_pro13_channel_target(&device_model, firmware_fingerprint.as_deref());
+    if target_code.is_some() || proinfo_channel_target.is_some() {
         if let Some(target_code) = target_code {
             live!(
                 log,
@@ -1795,7 +1796,7 @@ pub(crate) fn flash_worker(
             &device_model,
             firmware_fingerprint.as_deref(),
             target_code,
-            flip_proinfo_channel,
+            proinfo_channel_target,
             target_code.is_none().then_some(&["proinfo"][..]),
             &ll,
             &mut log,

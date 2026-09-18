@@ -131,14 +131,20 @@ fn xiaoxin_pro13_token(text: &str) -> Option<&'static str> {
     })
 }
 
-fn xiaoxin_pro13_cross_model(device_model: &str, firmware_fingerprint: Option<&str>) -> bool {
-    matches!(
-        (
-            xiaoxin_pro13_token(device_model),
-            firmware_fingerprint.and_then(xiaoxin_pro13_token),
-        ),
-        (Some(device), Some(firmware)) if !device.eq_ignore_ascii_case(firmware)
-    )
+fn xiaoxin_pro13_channel_target(
+    device_model: &str,
+    firmware_fingerprint: Option<&str>,
+) -> Option<ltbox_patch::region::ProinfoChannel> {
+    let device = xiaoxin_pro13_token(device_model)?;
+    let firmware = firmware_fingerprint.and_then(xiaoxin_pro13_token)?;
+    if device.eq_ignore_ascii_case(firmware) {
+        return None;
+    }
+    if firmware.eq_ignore_ascii_case(ltbox_core::model::TB390FU_MODEL) {
+        Some(ltbox_patch::region::ProinfoChannel::Commercial)
+    } else {
+        Some(ltbox_patch::region::ProinfoChannel::Consumer)
+    }
 }
 
 fn supported_model_identity_match(fingerprint: &str, model: &str) -> bool {
@@ -768,7 +774,7 @@ fn run_country_change(
     device_model: &str,
     firmware_fingerprint: Option<&str>,
     target_code: Option<&str>,
-    flip_proinfo_channel: bool,
+    proinfo_channel_target: Option<ltbox_patch::region::ProinfoChannel>,
     only_partitions: Option<&'static [&'static str]>,
     ll: &LiveLabels,
     log: &mut Vec<String>,
@@ -965,23 +971,34 @@ fn run_country_change(
             }
         }
 
-        if flip_proinfo_channel && label == "proinfo" {
+        if let Some(channel_target) = proinfo_channel_target.filter(|_| label == "proinfo") {
             let channel_input = if target_code.is_some() {
                 patched_path.as_path()
             } else {
                 dump_path.as_path()
             };
-            match ltbox_patch::region::patch_proinfo_channel(channel_input, &patched_path) {
+            match ltbox_patch::region::patch_proinfo_channel(
+                channel_input,
+                &patched_path,
+                channel_target,
+            ) {
                 Ok(channel_changed) => {
                     changed |= channel_changed;
                     ltbox_core::live!(
                         log,
                         "[Country] {}",
-                        ltbox_core::i18n::tr(if channel_changed {
-                            "live_proinfo_channel_transition"
+                        if channel_changed {
+                            tr_args!(
+                                "live_proinfo_channel_transition",
+                                from = channel_target.opposite().as_str(),
+                                to = channel_target.as_str()
+                            )
                         } else {
-                            "live_proinfo_channel_already"
-                        })
+                            tr_args!(
+                                "live_proinfo_channel_already",
+                                channel = channel_target.as_str()
+                            )
+                        }
                     );
                 }
                 Err(e) => {
@@ -1037,7 +1054,7 @@ fn run_country_change(
                 )
             );
             country_progress.mark_flashed(label);
-        } else if target_code.is_none() && flip_proinfo_channel && label == "proinfo" {
+        } else if target_code.is_none() && proinfo_channel_target.is_some() && label == "proinfo" {
             country_progress.mark_flashed(label);
         } else if label == "persist" {
             // persist carries no country code — nothing to
@@ -1199,24 +1216,26 @@ mod tests {
     }
 
     #[test]
-    fn xiaoxin_channel_flip_requires_different_pair_tokens() {
-        use super::{supported_model_identity_match, xiaoxin_pro13_cross_model};
-        assert!(xiaoxin_pro13_cross_model(
-            "TB376FC",
-            Some("Lenovo/TB390FU/TB390FU:15/build")
-        ));
-        assert!(xiaoxin_pro13_cross_model(
-            "TB390FU",
-            Some("Lenovo/TB376FC_PRC/TB376FC:15/build")
-        ));
-        assert!(!xiaoxin_pro13_cross_model(
-            "TB376FC",
-            Some("Lenovo/TB376FC_PRC/TB376FC:15/build")
-        ));
-        assert!(!xiaoxin_pro13_cross_model(
-            "TB390FU",
-            Some("Lenovo/TB390FU/TB390FU:15/build")
-        ));
+    fn xiaoxin_channel_target_follows_firmware_model() {
+        use ltbox_patch::region::ProinfoChannel;
+
+        use super::{supported_model_identity_match, xiaoxin_pro13_channel_target};
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB376FC", Some("Lenovo/TB390FU/TB390FU:15/build")),
+            Some(ProinfoChannel::Commercial)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB390FU", Some("Lenovo/TB376FC_PRC/TB376FC:15/build")),
+            Some(ProinfoChannel::Consumer)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB376FC", Some("Lenovo/TB376FC_PRC/TB376FC:15/build")),
+            None
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB390FU", Some("Lenovo/TB390FU/TB390FU:15/build")),
+            None
+        );
         assert!(supported_model_identity_match(
             "Lenovo/TB390FU/TB390FU:15/build",
             "TB390FU"
