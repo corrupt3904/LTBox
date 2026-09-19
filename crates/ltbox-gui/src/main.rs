@@ -1195,6 +1195,10 @@ impl Default for SettingsState {
 pub(crate) struct WorkflowConfig {
     pub(crate) modify_region: bool,
     pub(crate) device_region: Option<DeviceRegion>,
+    /// Factory region resolved from Lenovo's serial-number lookup. Manual
+    /// region choices are intentionally excluded: destructive PROINFO policy
+    /// must not treat an unverified selection as hardware identity.
+    pub(crate) verified_device_region: Option<DeviceRegion>,
     pub(crate) modify_rollback: RollbackSetting,
     /// Explicit rollback targets used only by `RollbackMode::Manual`.
     pub(crate) manual_rollback_indices: Option<ManualRollbackIndices>,

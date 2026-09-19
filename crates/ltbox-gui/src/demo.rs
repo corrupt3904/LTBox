@@ -620,6 +620,7 @@ fn apply_wizard_scene(app: &mut App, flow: Flow, step: WizardStep) {
     let config = WorkflowConfig {
         modify_region,
         device_region: Some(DeviceRegion::Prc),
+        verified_device_region: None,
         modify_rollback,
         manual_rollback_indices: None,
         wipe,

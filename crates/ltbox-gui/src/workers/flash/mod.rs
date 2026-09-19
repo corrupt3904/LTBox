@@ -4,10 +4,11 @@
 //! update_flash handler.
 
 use crate::{
-    ConnectionStatus, CountryPatchProgress, FirmwareIdentity, LiveLabels, PhaseReporter,
-    WorkflowConfig, active_slot_suffix, build_testkey_arb_overlays, efisp_suffix_for_vendor_boot,
-    fetch_efisp_asset, find_firmware_loader, fingerprint_token_match, is_rollback_protected_model,
-    open_edl_session, read_device_rollback_index_via_edl, transition_to_edl,
+    ConnectionStatus, CountryPatchProgress, DeviceRegion, FirmwareIdentity, LiveLabels,
+    PhaseReporter, WorkflowConfig, active_slot_suffix, build_testkey_arb_overlays,
+    efisp_suffix_for_vendor_boot, fetch_efisp_asset, find_firmware_loader,
+    fingerprint_token_match, is_rollback_protected_model, open_edl_session,
+    read_device_rollback_index_via_edl, transition_to_edl,
 };
 use ltbox_core::{live, tr_args};
 
@@ -131,19 +132,42 @@ fn xiaoxin_pro13_token(text: &str) -> Option<&'static str> {
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XiaoxinPro13ChannelPolicyError {
+    RowHardwareToPrcFirmware,
+    UnverifiedCrossFlash,
+}
+
 fn xiaoxin_pro13_channel_target(
     device_model: &str,
+    verified_device_region: Option<DeviceRegion>,
     firmware_fingerprint: Option<&str>,
-) -> Option<ltbox_patch::region::ProinfoChannel> {
-    let device = xiaoxin_pro13_token(device_model)?;
-    let firmware = firmware_fingerprint.and_then(xiaoxin_pro13_token)?;
-    if device.eq_ignore_ascii_case(firmware) {
-        return None;
-    }
-    if firmware.eq_ignore_ascii_case(ltbox_core::model::TB390FU_MODEL) {
-        Some(ltbox_patch::region::ProinfoChannel::Commercial)
-    } else {
-        Some(ltbox_patch::region::ProinfoChannel::Consumer)
+) -> Result<Option<ltbox_patch::region::ProinfoChannel>, XiaoxinPro13ChannelPolicyError> {
+    use ltbox_patch::region::ProinfoChannel;
+
+    let Some(firmware) = firmware_fingerprint.and_then(xiaoxin_pro13_token) else {
+        return Ok(None);
+    };
+
+    match verified_device_region {
+        Some(DeviceRegion::Prc) => {
+            if firmware.eq_ignore_ascii_case(ltbox_core::model::TB390FU_MODEL) {
+                Ok(Some(ProinfoChannel::Commercial))
+            } else {
+                Ok(Some(ProinfoChannel::Consumer))
+            }
+        }
+        Some(DeviceRegion::Row) => {
+            if firmware.eq_ignore_ascii_case(ltbox_core::model::TB390FU_MODEL) {
+                Ok(None)
+            } else {
+                Err(XiaoxinPro13ChannelPolicyError::RowHardwareToPrcFirmware)
+            }
+        }
+        None => match xiaoxin_pro13_token(device_model) {
+            Some(device) if device.eq_ignore_ascii_case(firmware) => Ok(None),
+            _ => Err(XiaoxinPro13ChannelPolicyError::UnverifiedCrossFlash),
+        },
     }
 }
 
@@ -1216,25 +1240,51 @@ mod tests {
     }
 
     #[test]
-    fn xiaoxin_channel_target_follows_firmware_model() {
+    fn xiaoxin_channel_target_uses_verified_factory_region() {
         use ltbox_patch::region::ProinfoChannel;
 
-        use super::{supported_model_identity_match, xiaoxin_pro13_channel_target};
+        use super::{
+            XiaoxinPro13ChannelPolicyError, supported_model_identity_match,
+            xiaoxin_pro13_channel_target,
+        };
+        let prc_fp = Some("Lenovo/TB376FC_PRC/TB376FC:15/build");
+        let row_fp = Some("Lenovo/TB390FU/TB390FU:15/build");
+
         assert_eq!(
-            xiaoxin_pro13_channel_target("TB376FC", Some("Lenovo/TB390FU/TB390FU:15/build")),
-            Some(ProinfoChannel::Commercial)
+            xiaoxin_pro13_channel_target("TB376FC", Some(DeviceRegion::Prc), row_fp),
+            Ok(Some(ProinfoChannel::Commercial))
         );
         assert_eq!(
-            xiaoxin_pro13_channel_target("TB390FU", Some("Lenovo/TB376FC_PRC/TB376FC:15/build")),
-            Some(ProinfoChannel::Consumer)
+            xiaoxin_pro13_channel_target("TB390FU", Some(DeviceRegion::Prc), prc_fp),
+            Ok(Some(ProinfoChannel::Consumer))
         );
         assert_eq!(
-            xiaoxin_pro13_channel_target("TB376FC", Some("Lenovo/TB376FC_PRC/TB376FC:15/build")),
-            None
+            xiaoxin_pro13_channel_target("TB390FU", Some(DeviceRegion::Row), row_fp),
+            Ok(None)
         );
         assert_eq!(
-            xiaoxin_pro13_channel_target("TB390FU", Some("Lenovo/TB390FU/TB390FU:15/build")),
-            None
+            xiaoxin_pro13_channel_target("TB390FU", Some(DeviceRegion::Row), prc_fp),
+            Err(XiaoxinPro13ChannelPolicyError::RowHardwareToPrcFirmware)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB376FC", None, row_fp),
+            Err(XiaoxinPro13ChannelPolicyError::UnverifiedCrossFlash)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("TB390FU", None, row_fp),
+            Ok(None)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target("", None, prc_fp),
+            Err(XiaoxinPro13ChannelPolicyError::UnverifiedCrossFlash)
+        );
+        assert_eq!(
+            xiaoxin_pro13_channel_target(
+                "TB390FU",
+                Some(DeviceRegion::Row),
+                Some("qti/TB323FU/TB323FU:15/build")
+            ),
+            Ok(None)
         );
         assert!(supported_model_identity_match(
             "Lenovo/TB390FU/TB390FU:15/build",

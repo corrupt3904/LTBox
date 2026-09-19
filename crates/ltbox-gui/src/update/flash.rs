@@ -144,6 +144,12 @@ impl App {
                     self.wf_config = WorkflowConfig {
                         modify_region: self.flash.target == Some(FlashTarget::OtherRegion),
                         device_region: self.flash.device_region,
+                        verified_device_region: matches!(
+                            self.flash.region_selection,
+                            Some(FlashRegionSelection::Auto)
+                        )
+                        .then_some(self.flash.device_region)
+                        .flatten(),
                         modify_rollback: if self.flash.target == Some(FlashTarget::OtherRegion) {
                             RollbackSetting::On
                         } else {
@@ -486,6 +492,10 @@ impl App {
                 // stale dispatch defensively like the region card handler does.
                 if !(self.model_capabilities().prc_only && r == DeviceRegion::Row) {
                     self.wf_config.device_region = Some(r);
+                    // A confirm-step override is a manual choice, even when it
+                    // happens to match the lookup result. Do not retain lookup
+                    // provenance across an explicit edit.
+                    self.wf_config.verified_device_region = None;
                 }
                 self.confirm_edit_field = None;
                 Task::none()
@@ -632,6 +642,37 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_auto_lookup_region_is_carried_as_verified_hardware() {
+        for (selection, expected) in [
+            (FlashRegionSelection::Auto, Some(DeviceRegion::Prc)),
+            (FlashRegionSelection::Manual(DeviceRegion::Prc), None),
+        ] {
+            let mut app = App::default();
+            app.flash.step = 2;
+            app.flash.region_selection = Some(selection);
+            app.flash.device_region = Some(DeviceRegion::Prc);
+            app.flash.target = Some(FlashTarget::OtherRegion);
+            app.flash.data_mode = Some(DataMode::Keep);
+
+            let _task = app.update_flash(FlashMsg::FlashNext);
+
+            assert_eq!(app.wf_config.verified_device_region, expected);
+        }
+    }
+
+    #[test]
+    fn confirm_region_override_clears_lookup_verification() {
+        let mut app = App::default();
+        app.wf_config.device_region = Some(DeviceRegion::Prc);
+        app.wf_config.verified_device_region = Some(DeviceRegion::Prc);
+
+        let _task = app.update_flash(FlashMsg::FlashConfirmSetRegion(DeviceRegion::Prc));
+
+        assert_eq!(app.wf_config.device_region, Some(DeviceRegion::Prc));
+        assert_eq!(app.wf_config.verified_device_region, None);
+    }
 
     #[test]
     fn advanced_manual_editor_confirms_distinct_indices_without_changing_flash_config() {

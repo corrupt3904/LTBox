@@ -241,6 +241,8 @@
   "err_flash_vbmeta_key_unknown": "Прошивка: vbmeta_system прошивки подписана неизвестным ключом (ни тестовым ключом AOSP, ни ключом Lenovo) — прерывание до записи",
   "err_flash_xiaoxin_arb_downgrade": "Хотя бы один индекс отката прошивки ниже соответствующего сохранённого индекса отката на устройстве, поэтому установить эту прошивку нельзя.",
   "err_flash_xiaoxin_arb_floor_unreadable": "Не удалось определить сохранённые индексы отката для boot и vbmeta_system; установка прервана.",
+  "err_flash_xiaoxin_region_unverified": "Для перекрёстной прошивки TB376FC/TB390FU необходимо подтвердить заводской регион устройства через проверку серийного номера Lenovo.",
+  "err_flash_xiaoxin_row_to_prc_unsupported": "Прошивка TB376FC на устройстве с подтверждённым регионом ROW не поддерживается.",
   "err_flash_xml_selection_failed": "Не удалось выбрать XML прошивки: {error}",
   "err_flash_zst_decompress_failed": "Не удалось распаковать {path}: {error}",
   "err_keyclass_work_dir_failed": "Не удалось создать рабочую папку для классификации ключей подписи: {error}",

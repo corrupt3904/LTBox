@@ -241,6 +241,8 @@
   "err_flash_vbmeta_key_unknown": "Flash: firmware vbmeta_system is signed with an unknown key (neither the AOSP test key nor the Lenovo key) — aborting before any write",
   "err_flash_xiaoxin_arb_downgrade": "At least one firmware rollback index is lower than the corresponding stored rollback index on the device, so this firmware cannot be installed.",
   "err_flash_xiaoxin_arb_floor_unreadable": "Could not determine the stored rollback indexes for boot and vbmeta_system; installation was aborted.",
+  "err_flash_xiaoxin_region_unverified": "TB376FC/TB390FU cross-flashing requires the factory hardware region to be verified through Lenovo's serial-number lookup.",
+  "err_flash_xiaoxin_row_to_prc_unsupported": "Flashing TB376FC firmware on verified ROW hardware is not supported.",
   "err_flash_xml_selection_failed": "Firmware XML selection failed: {error}",
   "err_flash_zst_decompress_failed": "Failed to decompress {path}: {error}",
   "err_keyclass_work_dir_failed": "Signing-key classification work directory creation failed: {error}",

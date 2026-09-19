@@ -241,6 +241,8 @@
   "err_flash_vbmeta_key_unknown": "フラッシュ： ファームウェアの vbmeta_system が不明な鍵で署名されています（AOSP テスト鍵でも Lenovo 鍵でもない）— 書き込み前に中止します",
   "err_flash_xiaoxin_arb_downgrade": "ファームウェアのロールバックインデックスのうち1つ以上が、端末に保存された対応するロールバックインデックスより低いため、このファームウェアはインストールできません。",
   "err_flash_xiaoxin_arb_floor_unreadable": "boot と vbmeta_system の保存済みロールバックインデックスを取得できなかったため、インストールを中止しました。",
+  "err_flash_xiaoxin_region_unverified": "TB376FC/TB390FU のクロスフラッシュには、Lenovo のシリアル番号照会による出荷時ハードウェア地域の確認が必要です。",
+  "err_flash_xiaoxin_row_to_prc_unsupported": "ROW ハードウェアと確認された端末への TB376FC ファームウェアの書き込みはサポートされていません。",
   "err_flash_xml_selection_failed": "ファームウェア XML の選択に失敗しました： {error}",
   "err_flash_zst_decompress_failed": "{path} の展開に失敗しました： {error}",
   "err_keyclass_work_dir_failed": "署名鍵判定用の作業フォルダーを作成できませんでした：{error}",

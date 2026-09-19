@@ -844,6 +844,32 @@ pub(crate) fn flash_worker(
         }
     }
 
+    // PROINFO policy combines the factory hardware region (only when verified
+    // through Lenovo's serial lookup) with the target firmware. Evaluate after
+    // the EDL-start model probe but before rawprogram can write anything.
+    let proinfo_channel_target = match xiaoxin_pro13_channel_target(
+        &device_model,
+        cfg.verified_device_region,
+        firmware_fingerprint.as_deref(),
+    ) {
+        Ok(target) => target,
+        Err(policy_error) => {
+            if edl_start {
+                let _ = session.reset_to_edl(&mut log);
+            } else {
+                session.reset_tolerant(&mut log);
+            }
+            return Err(ltbox_core::i18n::tr(match policy_error {
+                XiaoxinPro13ChannelPolicyError::RowHardwareToPrcFirmware => {
+                    "err_flash_xiaoxin_row_to_prc_unsupported"
+                }
+                XiaoxinPro13ChannelPolicyError::UnverifiedCrossFlash => {
+                    "err_flash_xiaoxin_region_unverified"
+                }
+            }));
+        }
+    };
+
     // TB376FC/TB390FU bootloaders do not expose rollback variables. Even on an
     // ADB/Fastboot start, determine both component floors from EDL dumps and
     // fail closed before rawprogram can write anything.
@@ -1753,8 +1779,6 @@ pub(crate) fn flash_worker(
     // when no country target was requested; in that case only proinfo is dumped
     // and flashed.
     let target_code = cfg.country_action.target();
-    let proinfo_channel_target =
-        xiaoxin_pro13_channel_target(&device_model, firmware_fingerprint.as_deref());
     if target_code.is_some() || proinfo_channel_target.is_some() {
         if let Some(target_code) = target_code {
             live!(

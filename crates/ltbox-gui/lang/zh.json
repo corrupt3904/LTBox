@@ -241,6 +241,8 @@
   "err_flash_vbmeta_key_unknown": "刷写：固件 vbmeta_system 的签名密钥未知（既非 AOSP 测试密钥也非 Lenovo 密钥）— 写入前中止",
   "err_flash_xiaoxin_arb_downgrade": "至少有一个固件回滚索引低于设备上对应的已存储回滚索引，因此无法安装此固件。",
   "err_flash_xiaoxin_arb_floor_unreadable": "无法确定设备上为 boot 和 vbmeta_system 存储的回滚索引，已中止安装。",
+  "err_flash_xiaoxin_region_unverified": "TB376FC/TB390FU 跨机型刷写要求通过 Lenovo 序列号查询确认设备的出厂硬件区域。",
+  "err_flash_xiaoxin_row_to_prc_unsupported": "不支持在已确认的 ROW 硬件上刷写 TB376FC 固件。",
   "err_flash_xml_selection_failed": "固件 XML 选择失败：{error}",
   "err_flash_zst_decompress_failed": "解压 {path} 失败：{error}",
   "err_keyclass_work_dir_failed": "创建签名密钥分类工作目录失败：{error}",
